@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "module": "ESNext",
+    "target": "ES2022",
+    "moduleResolution": "Bundler",
+    "checkJs": false,
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "allowJs": true
+  },
+  "include": ["client/src", "server", "test", "*.config.js"],
+  "exclude": ["node_modules", "dist"]
+}

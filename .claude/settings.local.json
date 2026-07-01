@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(node --version)",
+      "PowerShell(npm --version)",
+      "PowerShell(Write-Output \"=== winget ===\"; \\(Get-Command winget -ErrorAction SilentlyContinue\\).Source; Write-Output \"=== choco ===\"; \\(Get-Command choco -ErrorAction SilentlyContinue\\).Source; Write-Output \"=== scoop ===\"; \\(Get-Command scoop -ErrorAction SilentlyContinue\\).Source)",
+      "PowerShell(winget install OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements --silent --disable-interactivity 2>&1)",
+      "PowerShell($node = \"C:\\\\Program Files\\\\nodejs\\\\node.exe\"; & $node --version; & \"C:\\\\Program Files\\\\nodejs\\\\npm.cmd\" --version)",
+      "PowerShell($env:Path = \"C:\\\\Program Files\\\\nodejs;\" + $env:Path; cd C:\\\\calude; npm install 2>&1 | Select-Object -Last 25)",
+      "PowerShell($env:Path = \"C:\\\\Program Files\\\\nodejs;\" + $env:Path; cd C:\\\\calude; npm approve-scripts esbuild 2>&1 | Select-Object -Last 5; Write-Output \"=== build ===\"; npm run build 2>&1 | Select-Object -Last 30)",
+      "PowerShell($env:Path = \"C:\\\\Program Files\\\\nodejs;\" + $env:Path; cd C:\\\\calude; npm start)",
+      "mcp__Claude_Preview__preview_start",
+      "PowerShell(Get-NetTCPConnection -LocalPort 3001 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }; Write-Output \"freed\")",
+      "Bash(time curl -s -m 400 -X POST http://localhost:3001/api/coach-act -H 'Content-Type: application/json' -d '{\"profile\":__TRACKED_VAR__,\"messages\":[{\"role\":\"user\",\"content\":\"Change my push pull legs split into a bro split\"}],\"workoutPlan\":__TRACKED_VAR__}')",
+      "Bash(\"C:/Program Files/nodejs/node.exe\" -e 'const s=require\\(\"fs\"\\).readFileSync\\(\"/tmp/brosplit.json\",\"utf8\"\\); if\\(!s.trim\\(\\)\\){console.log\\(\"EMPTY\"\\);process.exit\\(\\)} const d=JSON.parse\\(s\\); console.log\\(\"action:\",d.action,\"| kind:\",d.kind,\"| approved:\",d.approved\\); if\\(d.plan\\)console.log\\(\"new days:\",d.plan.days.map\\(x=>x.day\\).join\\(\", \"\\)\\); console.log\\(\"reason:\",\\(d.reason||\"\"\\).slice\\(0,180\\)\\);')",
+      "Bash(node *)"
+    ]
+  }
+}

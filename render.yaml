@@ -1,0 +1,43 @@
+# Render Blueprint for FitAI (free tier, no credit card required).
+#
+# Data lives in Turso (libSQL cloud), so this service needs NO persistent disk —
+# it runs on Render's free instance and rebuilds a local read replica from Turso
+# on each cold start. Render free instances sleep after ~15 min idle (10–30s cold
+# start on the next request); no data is lost because the primary is in Turso.
+#
+# Deploy: push this repo to GitHub, then in Render → New → Blueprint, point it at
+# the repo. Set the three `sync: false` secrets in the dashboard when prompted.
+services:
+  - type: web
+    name: fitai-aron
+    runtime: node
+    plan: free
+    # Install ALL deps (build needs Vite) then build the SPA into dist/.
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Behind Render's TLS-terminating proxy — needed for real client IPs and
+      # Secure cookies.
+      - key: TRUST_PROXY
+        value: "1"
+      # Ephemeral local path for the Turso read replica (Render has no disk here).
+      - key: DB_PATH
+        value: /tmp/fitai.db
+      # Public origin so verification / reset email links resolve. Update if your
+      # Render URL differs from the service name.
+      - key: APP_URL
+        value: https://fitai-aron.onrender.com
+      # ---- Secrets: set these in the Render dashboard (never committed) ----
+      - key: SESSION_SECRET       # >=32 chars; app refuses to boot without it
+        sync: false
+      - key: TURSO_DATABASE_URL   # libsql://<your-db>.turso.io
+        sync: false
+      - key: TURSO_AUTH_TOKEN     # from: turso db tokens create <db>
+        sync: false
+      # Optional — omit to use the built-in rule-based workout engine.
+      - key: ANTHROPIC_API_KEY
+        sync: false

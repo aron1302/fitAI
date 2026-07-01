@@ -1,0 +1,48 @@
+# Fly.io configuration for FitAI.
+#
+# First-time setup (see DEPLOY.md "Deploying to Fly.io" for the full runbook):
+#   1. Edit `app` (must be globally unique) and `primary_region` below.
+#   2. fly volumes create fitai_data --region <same region> --size 1
+#   3. fly secrets set SESSION_SECRET=... (and SMTP_*, AI keys, Litestream, …)
+#   4. fly deploy
+#
+# IMPORTANT: FitAI uses SQLite (a single-writer local file). Keep exactly ONE
+# machine running and never `fly scale count` above 1 — multiple machines would
+# each get their own volume and split/corrupt the data.
+
+app = "fitai-aron"
+primary_region = "iad"   # pick the region nearest your users (fly platform regions)
+
+[build]
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3001"
+  TRUST_PROXY = "1"
+  DB_PATH = "/data/fitai.db"
+  BACKUP_DIR = "/data/backups"
+  # Your real public origin, so verification/reset email links resolve.
+  # Update to your custom domain once it's attached.
+  APP_URL = "https://fitai-aron.fly.dev"
+
+[http_service]
+  internal_port = 3001
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/healthz"
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "10s"
+
+[mounts]
+  source = "fitai_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

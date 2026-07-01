@@ -1,0 +1,72 @@
+// Transactional email (verification + password reset). Uses nodemailer with a
+// configured SMTP server in production; when no SMTP is set it falls back to a
+// console transport that prints the message — including the link — to the server
+// log, so the flows are fully testable in local development.
+
+import nodemailer from "nodemailer";
+import { config } from "./config.js";
+
+let transporter = null;
+function getTransport() {
+  if (!config.emailEnabled) return null;
+  if (transporter) return transporter;
+  const { url, host, port, user, pass } = config.smtp;
+  transporter = url
+    ? nodemailer.createTransport(url)
+    : nodemailer.createTransport({
+        host,
+        port,
+        secure: port === 465,
+        auth: user ? { user, pass } : undefined,
+      });
+  return transporter;
+}
+
+async function send({ to, subject, text, html }) {
+  const t = getTransport();
+  if (!t) {
+    // No SMTP configured — log it so the link is usable in dev/testing.
+    console.log(
+      `\n  [email:console] To: ${to}\n  Subject: ${subject}\n  ${text.replace(/\n/g, "\n  ")}\n`
+    );
+    return;
+  }
+  await t.sendMail({ from: config.smtp.from, to, subject, text, html });
+}
+
+function htmlWrap(heading, body, link, cta) {
+  return `<div style="font-family:system-ui,Segoe UI,Roboto,sans-serif;max-width:480px;margin:0 auto;color:#1b2336">
+    <h2 style="margin:0 0 12px">${heading}</h2>
+    <p style="color:#475569;line-height:1.6">${body}</p>
+    <p style="margin:24px 0"><a href="${link}" style="background:#22d3ee;color:#06210f;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:10px;display:inline-block">${cta}</a></p>
+    <p style="color:#94a3b8;font-size:13px">Or paste this link into your browser:<br>${link}</p>
+  </div>`;
+}
+
+export async function sendVerificationEmail(to, link) {
+  await send({
+    to,
+    subject: "Verify your FitAI email",
+    text: `Welcome to FitAI! Confirm your email address by opening this link (valid for 24 hours):\n\n${link}\n\nIf you didn't create an account, you can safely ignore this email.`,
+    html: htmlWrap(
+      "Verify your email",
+      "Confirm your email address to secure your FitAI account.",
+      link,
+      "Verify email"
+    ),
+  });
+}
+
+export async function sendPasswordResetEmail(to, link) {
+  await send({
+    to,
+    subject: "Reset your FitAI password",
+    text: `We received a request to reset your FitAI password. Open this link (valid for 1 hour) to choose a new one:\n\n${link}\n\nIf you didn't request this, you can ignore this email — your password won't change.`,
+    html: htmlWrap(
+      "Reset your password",
+      "Choose a new password for your FitAI account. This link is valid for one hour.",
+      link,
+      "Reset password"
+    ),
+  });
+}

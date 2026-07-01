@@ -1,0 +1,8 @@
+# FitAI — security contact (RFC 9116). See SECURITY.md for the full policy.
+Contact: mailto:aronjames214@gmail.com
+Expires: 2027-06-30T23:59:59.000Z
+Preferred-Languages: en
+
+# Set these once your public domain is live, then refresh Expires annually:
+# Canonical: https://your-domain.example/.well-known/security.txt
+# Policy: https://your-domain.example/legal/privacy

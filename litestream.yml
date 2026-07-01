@@ -1,0 +1,16 @@
+# Litestream continuous replication for the SQLite database.
+#
+# This is OPTIONAL. The Fly volume already persists the database across restarts
+# and deploys; Litestream adds continuous *off-site* backup (point-in-time
+# restore + disaster recovery) by streaming the WAL to object storage.
+#
+# To enable, set these as Fly secrets (see DEPLOY.md):
+#   LITESTREAM_REPLICA_URL = s3://your-bucket/fitai            (or b2://, gs://, abs://…)
+#   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY                   (bucket credentials)
+# Leave LITESTREAM_REPLICA_URL unset to run straight off the volume.
+#
+# Litestream expands ${VARS} from the environment at startup.
+dbs:
+  - path: ${DB_PATH}
+    replicas:
+      - url: ${LITESTREAM_REPLICA_URL}

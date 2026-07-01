@@ -1,0 +1,12 @@
+node_modules
+dist
+.git
+.github
+.env*
+*.log
+fitai.db
+fitai.db-*
+backups
+test
+.vscode
+.DS_Store

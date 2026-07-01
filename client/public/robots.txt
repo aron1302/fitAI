@@ -1,0 +1,10 @@
+# FitAI
+# The app itself is behind authentication; only the public legal pages and the
+# landing/auth screen are crawlable. Adjust per your launch/SEO needs.
+User-agent: *
+Allow: /$
+Allow: /legal/
+Disallow: /api/
+
+# Point this at your real public origin once a domain is live.
+# Sitemap: https://your-domain.example/sitemap.xml
