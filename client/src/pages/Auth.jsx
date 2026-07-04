@@ -13,6 +13,7 @@ export default function Auth() {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
+  const [notice, setNotice] = useState(null); // info message (e.g. signup "check your email")
   const [twoFA, setTwoFA] = useState(null); // challenge token while awaiting 2FA
   const [code, setCode] = useState("");
 
@@ -23,6 +24,7 @@ export default function Auth() {
     setMode(m);
     setError(null);
     setSent(false);
+    setNotice(null);
     setPassword("");
   };
   const cancelTwoFA = () => {
@@ -42,7 +44,8 @@ export default function Auth() {
         await requestPasswordReset(email.trim());
         setSent(true);
       } else if (isSignup) {
-        await signup(email.trim(), password);
+        const data = await signup(email.trim(), password);
+        if (!data?.user) setNotice(data?.message || "Check your email to continue.");
       } else {
         const data = await login(email.trim(), password);
         if (data?.twoFactorRequired) setTwoFA(data.challenge);
@@ -109,6 +112,13 @@ export default function Auth() {
             </div>
             <p className="auth-legal">Lost your device? Enter one of your recovery codes instead.</p>
           </>
+        ) : notice ? (
+          <div style={{ textAlign: "center" }}>
+            <p className="auth-sub">{notice}</p>
+            <button type="button" className="auth-link" onClick={() => goMode("login")}>
+              Back to login
+            </button>
+          </div>
         ) : isForgot && sent ? (
           <div style={{ textAlign: "center" }}>
             <p className="auth-sub">

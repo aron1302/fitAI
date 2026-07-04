@@ -54,10 +54,15 @@ export function AuthProvider({ children }) {
     setUser(u);
   };
 
+  // Returns the raw result: { user } signs the new account in; { user: null,
+  // message } means the caller should show the message (check-your-email case).
   const signup = async (email, password) => {
-    const u = await signupRequest(email, password);
-    clearCache();
-    setUser(u);
+    const data = await signupRequest(email, password);
+    if (data.user) {
+      clearCache();
+      setUser(data.user);
+    }
+    return data;
   };
 
   const logout = async () => {

@@ -274,8 +274,10 @@ app.get("/api/exercise-demo", requireAuth, async (req, res) => {
 });
 
 // Stream the animated GIF bytes for an exercise id, fetched server-side with the
-// API key. Heavily cached since the asset never changes.
+// API key. Heavily cached since the asset never changes. The id is restricted to
+// a safe charset so it can't smuggle path segments into the upstream fetch.
 app.get("/api/exercise-demo/image/:id", requireAuth, async (req, res) => {
+  if (!/^[A-Za-z0-9_-]{1,100}$/.test(req.params.id)) return res.status(404).end();
   const img = await exerciseImage(req.params.id);
   if (!img) return res.status(404).end();
   res.set("Content-Type", img.contentType);
@@ -333,7 +335,7 @@ function planInput(req, res) {
   return { profile: prof.data, recovery: rec.data };
 }
 
-app.post("/api/workout-plan", aiLimiter, async (req, res) => {
+app.post("/api/workout-plan", requireAuth, aiLimiter, async (req, res) => {
   const input = planInput(req, res);
   if (!input) return;
   const { profile, recovery } = input;
@@ -349,7 +351,7 @@ app.post("/api/workout-plan", aiLimiter, async (req, res) => {
   res.json(generateWorkoutPlan(profile, recovery));
 });
 
-app.post("/api/diet-plan", aiLimiter, async (req, res) => {
+app.post("/api/diet-plan", requireAuth, aiLimiter, async (req, res) => {
   const input = planInput(req, res);
   if (!input) return;
   const { profile, recovery } = input;
@@ -363,7 +365,7 @@ app.post("/api/diet-plan", aiLimiter, async (req, res) => {
   res.json(generateDietPlan(profile));
 });
 
-app.post("/api/recovery-plan", aiLimiter, async (req, res) => {
+app.post("/api/recovery-plan", requireAuth, aiLimiter, async (req, res) => {
   const input = planInput(req, res);
   if (!input) return;
   const { profile, recovery } = input;
@@ -379,7 +381,7 @@ app.post("/api/recovery-plan", aiLimiter, async (req, res) => {
 
 // AI-judged plan edit: the model decides if the requested change is suitable
 // and either applies it (approved + updated plan) or declines with a reason.
-app.post("/api/suggest-edit", aiLimiter, async (req, res) => {
+app.post("/api/suggest-edit", requireAuth, aiLimiter, async (req, res) => {
   const { kind, plan, suggestion, profile, recovery } = req.body || {};
   const kindCheck = check(PlanKindSchema, kind);
   if (!kindCheck.ok)
@@ -421,7 +423,7 @@ app.post("/api/suggest-edit", aiLimiter, async (req, res) => {
 // Coach action check: decides if the latest message is a request to edit the
 // workout or diet plan. If so, applies the AI edit and returns the result;
 // otherwise tells the client to fall back to normal streaming chat.
-app.post("/api/coach-act", aiLimiter, async (req, res) => {
+app.post("/api/coach-act", requireAuth, aiLimiter, async (req, res) => {
   const { workoutPlan, dietPlan } = req.body || {};
   const prof = check(ProfileSchema, req.body?.profile);
   if (!prof.ok) return res.status(400).json({ error: `invalid profile — ${prof.error}` });
@@ -452,7 +454,7 @@ app.post("/api/coach-act", aiLimiter, async (req, res) => {
 });
 
 // Coach: streams plain text. Falls back to a rule-based reply on error/no key.
-app.post("/api/coach", aiLimiter, async (req, res) => {
+app.post("/api/coach", requireAuth, aiLimiter, async (req, res) => {
   const prof = check(ProfileSchema, req.body?.profile);
   if (!prof.ok) return res.status(400).json({ error: `invalid profile — ${prof.error}` });
   const msgs = check(MessagesSchema, req.body?.messages);

@@ -27,20 +27,19 @@ export async function fetchMe() {
   }
 }
 
-// POST credentials to /api/auth/<path>. Resolves to the user on success;
-// throws an Error with the server's message on failure.
-async function postAuth(path, body) {
-  const r = await fetch(`/api/auth/${path}`, {
+// Signup returns the full response: { user } when the account was created and a
+// session started, or { user: null, message } when the server won't say more
+// (e.g. the address may already have an account — check the inbox).
+export async function signupRequest(email, password) {
+  const r = await fetch("/api/auth/signup", {
     method: "POST",
     headers: jsonHeaders(),
-    body: JSON.stringify(body),
+    body: JSON.stringify({ email, password }),
   });
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(data.error || "Request failed");
-  return data.user;
+  return data;
 }
-
-export const signupRequest = (email, password) => postAuth("signup", { email, password });
 
 // Login returns the full response: { user } on success, or { twoFactorRequired,
 // challenge } when a second factor is needed.

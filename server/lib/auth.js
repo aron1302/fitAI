@@ -38,7 +38,11 @@ import {
 import { config, hashIp } from "./config.js";
 import { validatePassword } from "./password.js";
 import { newToken, hashToken, VERIFY_TTL_MS, RESET_TTL_MS } from "./tokens.js";
-import { sendVerificationEmail, sendPasswordResetEmail } from "./email.js";
+import {
+  sendVerificationEmail,
+  sendPasswordResetEmail,
+  sendAccountExistsEmail,
+} from "./email.js";
 import { generateSecret, verifyTotp, otpauthUri } from "./totp.js";
 import { signChallenge, verifyChallenge } from "./challenge.js";
 
@@ -86,6 +90,12 @@ const cookieOptions = () => ({
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Failed-login lockout is scoped to email + client IP (emails can't contain
+// whitespace, so "\n" is a safe separator). Keying on the email alone would let
+// anyone who knows a victim's address lock them out on purpose; the per-IP auth
+// rate limiter still bounds distributed guessing across many addresses.
+const lockoutKey = (emailKey, ipHash) => `${emailKey}\n${ipHash || ""}`;
+
 // Hashed client IP for audit/session metadata (never the raw address).
 function reqIpHash(req) {
   return hashIp(req.ip || req.socket?.remoteAddress || "");
@@ -122,8 +132,21 @@ export async function signup(req, res) {
   }
   const strength = validatePassword(password, email);
   if (!strength.ok) return res.status(400).json({ error: strength.error });
-  if (getUserByEmail(email.toLowerCase())) {
-    return res.status(409).json({ error: "an account with that email already exists" });
+  const existing = getUserByEmail(email.toLowerCase());
+  if (existing) {
+    // Don't reveal that the address is registered. Respond with the same
+    // generic "check your email" as a pending signup and notify the account
+    // owner instead (they can log in or reset their password).
+    logAudit({ event: "signup_existing_email", userId: existing.id, ipHash: reqIpHash(req) });
+    try {
+      await sendAccountExistsEmail(existing.email, `${config.appUrl}/`);
+    } catch (err) {
+      console.error("[auth] account-exists email failed:", err.message);
+    }
+    return res.json({
+      user: null,
+      message: "Check your email to finish setting up your account.",
+    });
   }
   const passwordHash = await bcrypt.hash(password, 12);
   const user = createUser(email.toLowerCase(), passwordHash);
@@ -140,11 +163,12 @@ export async function login(req, res) {
   }
   const key = email.toLowerCase();
   const ipHash = reqIpHash(req);
+  const lkey = lockoutKey(key, ipHash);
 
   // Lockout check first, so a locked account can't be probed further.
-  const until = loginLockedUntil(key);
+  const until = loginLockedUntil(lkey);
   if (until) {
-    logAudit({ event: "login_locked", ipHash, detail: key });
+    logAudit({ event: "login_locked", ipHash, detail: hashIp(key) });
     const mins = Math.ceil((until - Date.now()) / 60000);
     return res
       .status(429)
@@ -158,12 +182,14 @@ export async function login(req, res) {
     : await bcrypt.compare(password, "$2a$12$invalidinvalidinvalidinvalidinvalidinvalidinv");
 
   if (!user || !ok) {
-    const lockedUntil = registerFailedLogin(key, config.maxLoginAttempts, config.lockoutMs);
+    const lockedUntil = registerFailedLogin(lkey, config.maxLoginAttempts, config.lockoutMs);
     logAudit({
       event: lockedUntil ? "login_lockout_triggered" : "login_fail",
       userId: user?.id ?? null,
       ipHash,
-      detail: key,
+      // Keyed hash of the attempted email (same HMAC as IPs) so repeat attempts
+      // stay correlatable in the audit trail without storing the address itself.
+      detail: hashIp(key),
     });
     return res.status(401).json({ error: "invalid email or password" });
   }
@@ -175,7 +201,7 @@ export async function login(req, res) {
     return res.json({ twoFactorRequired: true, challenge: signChallenge(user.id) });
   }
 
-  clearLoginAttempts(key);
+  clearLoginAttempts(lkey);
   startSession(req, res, user.id);
   logAudit({ event: "login_success", userId: user.id, ipHash });
   res.json({ user: userPayload(user) });
@@ -197,8 +223,9 @@ export function verifyTwoFactor(req, res) {
   }
   const key = user.email.toLowerCase();
   const ipHash = reqIpHash(req);
+  const lkey = lockoutKey(key, ipHash);
 
-  const until = loginLockedUntil(key);
+  const until = loginLockedUntil(lkey);
   if (until) {
     const mins = Math.ceil((until - Date.now()) / 60000);
     return res.status(429).json({ error: `too many attempts — try again in about ${mins} minute${mins === 1 ? "" : "s"}` });
@@ -210,12 +237,12 @@ export function verifyTwoFactor(req, res) {
   if (!ok) ok = consumeRecoveryCode(userId, hashRecovery(submitted)); // recovery-code fallback
 
   if (!ok) {
-    registerFailedLogin(key, config.maxLoginAttempts, config.lockoutMs);
+    registerFailedLogin(lkey, config.maxLoginAttempts, config.lockoutMs);
     logAudit({ event: "login_2fa_fail", userId, ipHash });
     return res.status(401).json({ error: "invalid authentication code" });
   }
 
-  clearLoginAttempts(key);
+  clearLoginAttempts(lkey);
   startSession(req, res, userId);
   logAudit({ event: "login_success", userId, ipHash, detail: "2fa" });
   res.json({ user: userPayload(user) });

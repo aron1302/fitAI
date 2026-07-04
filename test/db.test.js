@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
+import { hashToken } from "../server/lib/tokens.js";
 
 // Point the DB at an in-memory SQLite instance *before* importing the module
 // (imports are hoisted, so this must be a dynamic import).
@@ -93,11 +94,44 @@ describe("sessions", () => {
   it("treats an expired session as invalid and deletes it", () => {
     const u = m.createUser("expired@b.com", "h");
     const token = "expiredtoken123";
+    // Sessions are stored hashed, so seed the row with the token's hash.
     rawDb
       .prepare("INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)")
-      .run(token, u.id, Math.floor(Date.now() / 1000) - 10);
+      .run(hashToken(token), u.id, Math.floor(Date.now() / 1000) - 10);
     expect(m.getSessionUserId(token)).toBe(null);
     // it should have been purged
+    expect(
+      rawDb.prepare("SELECT 1 FROM sessions WHERE token = ?").get(hashToken(token))
+    ).toBeUndefined();
+  });
+
+  it("stores only the hash of the session token, never the raw token", () => {
+    const u = m.createUser("hashed@b.com", "h");
+    const token = m.createSession(u.id);
     expect(rawDb.prepare("SELECT 1 FROM sessions WHERE token = ?").get(token)).toBeUndefined();
+    expect(
+      rawDb.prepare("SELECT 1 FROM sessions WHERE token = ?").get(hashToken(token))
+    ).toBeDefined();
+  });
+});
+
+describe("failed-login lockout", () => {
+  it("locks after maxAttempts and clears per-email across IP-scoped keys", () => {
+    const email = "victim@b.com";
+    const keyA = `${email}\niphash-a`;
+    const keyB = `${email}\niphash-b`;
+    for (let i = 0; i < 3; i++) m.registerFailedLogin(keyA, 3, 60000);
+    m.registerFailedLogin(keyB, 3, 60000);
+    expect(m.loginLockedUntil(keyA)).toBeGreaterThan(Date.now());
+    // A different IP's key is not locked by A's failures.
+    expect(m.loginLockedUntil(keyB)).toBe(0);
+    // Clearing by bare email (e.g. after password reset) removes all IP-scoped rows.
+    m.clearLoginAttempts(email);
+    expect(m.loginLockedUntil(keyA)).toBe(0);
+    for (let i = 0; i < 3; i++) m.registerFailedLogin(keyB, 3, 60000);
+    expect(m.loginLockedUntil(keyB)).toBeGreaterThan(Date.now());
+    // Clearing the exact composite key (successful login) works too.
+    m.clearLoginAttempts(keyB);
+    expect(m.loginLockedUntil(keyB)).toBe(0);
   });
 });

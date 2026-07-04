@@ -57,6 +57,22 @@ export async function sendVerificationEmail(to, link) {
   });
 }
 
+// Sent when someone tries to sign up with an address that already has an
+// account (instead of revealing that fact to the requester).
+export async function sendAccountExistsEmail(to, link) {
+  await send({
+    to,
+    subject: "You already have a FitAI account",
+    text: `Someone (hopefully you) tried to create a FitAI account with this email address, but you already have one.\n\nIf this was you, just log in instead: ${link}\nForgot your password? Use "Forgot password?" on the login screen.\n\nIf this wasn't you, no action is needed — no account was created and nothing has changed.`,
+    html: htmlWrap(
+      "You already have an account",
+      "Someone (hopefully you) tried to sign up with this email address, but an account already exists. If this was you, just log in — or use “Forgot password?” if you can't remember it. If it wasn't you, no action is needed.",
+      link,
+      "Go to login"
+    ),
+  });
+}
+
 export async function sendPasswordResetEmail(to, link) {
   await send({
     to,

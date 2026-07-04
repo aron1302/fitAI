@@ -7,6 +7,7 @@ import Database from "libsql";
 import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { hashToken } from "./tokens.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, "..", "..", "fitai.db");
@@ -156,8 +157,14 @@ function runMigrations() {
   db.exec("CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at INTEGER)");
   const applied = new Set(db.prepare("SELECT name FROM schema_migrations").all().map((r) => r.name));
   const record = db.prepare("INSERT INTO schema_migrations (name, applied_at) VALUES (?, unixepoch())");
+  // Statements are executed one at a time: a multi-statement exec() inside an
+  // explicit transaction breaks libsql's replica write delegation (the ROLLBACK
+  // then fails with InvalidParserState). Migration SQL contains no semicolons
+  // inside literals, so splitting on ";" is safe.
   const apply = db.transaction((m) => {
-    db.exec(m.sql);
+    for (const stmt of m.sql.split(";").map((s) => s.trim()).filter(Boolean)) {
+      db.exec(stmt);
+    }
     record.run(m.name);
   });
   for (const m of MIGRATIONS) {
@@ -434,31 +441,34 @@ const deleteUserSessions = db.prepare("DELETE FROM sessions WHERE user_id = ?");
 
 export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
 
-// Create a session and return its opaque token. `meta` may carry { ipHash,
-// userAgent } for the "active sessions" view.
+// Create a session and return its opaque token. Like email tokens, only the
+// SHA-256 hash of the token is stored, so a leaked database (or backup) doesn't
+// yield directly usable session cookies. `meta` may carry { ipHash, userAgent }
+// for the "active sessions" view.
 export function createSession(userId, meta = {}) {
   const token = randomToken();
   const expiresAt = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS;
-  insertSession.run(token, userId, expiresAt, meta.ipHash || null, meta.userAgent || null);
+  insertSession.run(hashToken(token), userId, expiresAt, meta.ipHash || null, meta.userAgent || null);
   return token;
 }
 
 export function getSessionUserId(token) {
   if (!token) return null;
-  const row = selectSession.get(token);
+  const tokenHash = hashToken(token);
+  const row = selectSession.get(tokenHash);
   if (!row) return null;
   if (row.expires_at < Math.floor(Date.now() / 1000)) {
-    deleteSession.run(token);
+    deleteSession.run(tokenHash);
     return null;
   }
   return row.user_id;
 }
 
-export const destroySession = (token) => token && deleteSession.run(token);
+export const destroySession = (token) => token && deleteSession.run(hashToken(token));
 export const purgeExpiredSessions = () => deleteExpiredSessions.run();
 export const listSessions = (userId) => selectSessionsByUser.all(userId);
 export const destroyOtherSessions = (userId, currentToken) =>
-  deleteOtherSessions.run(userId, currentToken || "");
+  deleteOtherSessions.run(userId, currentToken ? hashToken(currentToken) : "");
 export const destroyAllSessions = (userId) => deleteUserSessions.run(userId);
 
 // ---- Audit log -------------------------------------------------------------
@@ -489,7 +499,12 @@ const bumpAttempt = db.prepare(`
   ON CONFLICT(key) DO UPDATE SET count = count + 1, updated_at = unixepoch()
 `);
 const setLocked = db.prepare("UPDATE login_attempts SET locked_until = ? WHERE key = ?");
-const clearAttempt = db.prepare("DELETE FROM login_attempts WHERE key = ?");
+// Lockout keys are either a bare email or "email\n<ipHash>" (see auth.js). This
+// deletes an exact key AND all of an email's per-IP entries, so a password reset
+// or successful login can clear every outstanding lock for the account.
+const clearAttempt = db.prepare(
+  "DELETE FROM login_attempts WHERE key = ?1 OR substr(key, 1, length(?1) + 1) = ?1 || char(10)"
+);
 
 // Returns the epoch-ms time the key is locked until, or 0 if not locked.
 export function loginLockedUntil(key) {
