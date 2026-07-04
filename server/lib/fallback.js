@@ -324,5 +324,5 @@ export function coachReply(profile, messages) {
   if (/lose|fat|weight loss|cut/.test(last)) {
     return `Sustainable fat loss comes from a modest calorie deficit (≈${Math.round(t.maintenance * 0.8)} kcal for you), high protein, resistance training to keep muscle, and daily steps. Aim for ~0.5 kg/week — faster than that and you'll lose muscle too.`;
   }
-  return `Good question, ${name}. The fundamentals that drive 90% of results: train hard 3-5x/week, hit ~${t.proteinG}g protein and ~${t.calories} kcal daily for your goal, sleep 7-9h, and stay consistent for months not days. Ask me about your workout plan, nutrition numbers, recovery, or any exercise and I'll get specific. (Add an API key to unlock the full AI coach.)`;
+  return `Good question, ${name}. The fundamentals that drive 90% of results: train hard 3-5x/week, hit ~${t.proteinG}g protein and ~${t.calories} kcal daily for your goal, sleep 7-9h, and stay consistent for months not days. Ask me about your workout plan, nutrition numbers, recovery, or any exercise and I'll get specific. (The full AI coach is busy right now — ask again in a little while for a personalised reply.)`;
 }

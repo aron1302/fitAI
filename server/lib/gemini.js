@@ -19,6 +19,11 @@ import {
 // Default model: 2.5-flash — Google removed 2.0-flash from the free tier
 // (free-tier quota is 0 there), so 2.5 is the current no-cost workhorse.
 const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+// Free-tier daily quotas are tiny (observed: 20 requests/day for 2.5-flash),
+// so when the primary model is exhausted (429) or erroring, the same request
+// retries on fallback models — still real AI — before the caller gives up and
+// uses the rule-based engine.
+const MODELS = [...new Set([MODEL, "gemini-2.5-flash-lite"])];
 const BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 export function geminiEnabled() {
@@ -26,7 +31,8 @@ export function geminiEnabled() {
 }
 export const geminiModel = MODEL;
 
-// One-shot JSON generation (used for workout & diet plans).
+// One-shot JSON generation (used for workout & diet plans). Walks the model
+// chain: a quota/availability failure on one model retries on the next.
 async function geminiJSON(systemText, userText) {
   const body = {
     systemInstruction: { parts: [{ text: systemText }] },
@@ -42,18 +48,29 @@ async function geminiJSON(systemText, userText) {
       thinkingConfig: { thinkingBudget: 0 },
     },
   };
-  const r = await fetch(`${BASE}/${MODEL}:generateContent?key=${process.env.GEMINI_API_KEY}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(60000),
-  });
-  if (!r.ok) throw new Error(`Gemini ${r.status}: ${(await r.text()).slice(0, 200)}`);
-  const data = await r.json();
-  const text = (data.candidates?.[0]?.content?.parts || []).map((p) => p.text).join("") || "{}";
-  const parsed = JSON.parse(text);
-  parsed._engine = "gemini";
-  return parsed;
+  let lastErr;
+  for (const model of MODELS) {
+    try {
+      const r = await fetch(`${BASE}/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(60000),
+      });
+      if (!r.ok) {
+        lastErr = new Error(`Gemini ${model} ${r.status}: ${(await r.text()).slice(0, 200)}`);
+        continue;
+      }
+      const data = await r.json();
+      const text = (data.candidates?.[0]?.content?.parts || []).map((p) => p.text).join("") || "{}";
+      const parsed = JSON.parse(text);
+      parsed._engine = "gemini";
+      return parsed;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr;
 }
 
 export async function geminiWorkoutPlan(profile, recovery) {
@@ -104,18 +121,33 @@ export async function geminiCoachStream(profile, messages, recovery, res) {
       thinkingConfig: { thinkingBudget: 0 },
     },
   };
-  const r = await fetch(
-    `${BASE}/${MODEL}:streamGenerateContent?alt=sse&key=${process.env.GEMINI_API_KEY}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(90000),
+  // Walk the model chain; throw before writing anything so the caller can
+  // fall back cleanly if every model is unavailable.
+  let r = null;
+  let lastErr;
+  for (const model of MODELS) {
+    try {
+      const attempt = await fetch(
+        `${BASE}/${model}:streamGenerateContent?alt=sse&key=${process.env.GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(90000),
+        }
+      );
+      if (attempt.ok && attempt.body) {
+        r = attempt;
+        break;
+      }
+      lastErr = new Error(
+        `Gemini ${model} ${attempt.status}: ${(await attempt.text?.())?.slice(0, 200) || "stream error"}`
+      );
+    } catch (err) {
+      lastErr = err;
     }
-  );
-  // Throw before writing anything so the caller can fall back cleanly.
-  if (!r.ok || !r.body)
-    throw new Error(`Gemini ${r.status}: ${(await r.text?.())?.slice(0, 200) || "stream error"}`);
+  }
+  if (!r) throw lastErr || new Error("Gemini stream unavailable");
 
   const reader = r.body.getReader();
   const decoder = new TextDecoder();
