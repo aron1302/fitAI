@@ -181,19 +181,30 @@ const MIGRATIONS = [
 ];
 
 function runMigrations() {
-  db.exec("CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at INTEGER)");
+  const bootstrap =
+    "CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at INTEGER)";
+  if (useReplica) db.prepare(bootstrap).run();
+  else db.exec(bootstrap);
   const applied = new Set(db.prepare("SELECT name FROM schema_migrations").all().map((r) => r.name));
   const record = db.prepare("INSERT INTO schema_migrations (name, applied_at) VALUES (?, unixepoch())");
   // Statements are executed one at a time: a multi-statement exec() inside an
   // explicit transaction breaks libsql's replica write delegation (the ROLLBACK
   // then fails with InvalidParserState). Migration SQL contains no semicolons
   // inside literals, so splitting on ";" is safe.
-  const apply = db.transaction((m) => {
+  //
+  // Replica mode goes further: exec() AND transactions are both unreliable over
+  // libsql's write delegation for DDL (InvalidParserState("Init") on a fresh
+  // database), so statements run individually through the prepared-statement
+  // path — the same path every runtime query uses. Each DDL statement is atomic
+  // on its own, and schema_migrations records only fully-applied migrations.
+  const applyStatements = (m) => {
     for (const stmt of m.sql.split(";").map((s) => s.trim()).filter(Boolean)) {
-      db.exec(stmt);
+      if (useReplica) db.prepare(stmt).run();
+      else db.exec(stmt);
     }
     record.run(m.name);
-  });
+  };
+  const apply = useReplica ? applyStatements : db.transaction(applyStatements);
   for (const m of MIGRATIONS) {
     if (!applied.has(m.name)) apply(m);
   }
@@ -311,10 +322,13 @@ export const STATE_KEYS = [
 const STATE_KEY_SET = new Set(STATE_KEYS);
 export const isStateKey = (key) => STATE_KEY_SET.has(key);
 
+// NOTE: statements use positional (?) parameters only — libsql's replica write
+// delegation silently binds named (@x) parameters as NULL, which surfaced as
+// NOT NULL constraint failures in production.
 const selectAll = db.prepare("SELECT key, value FROM app_state WHERE user_id = ?");
 const upsert = db.prepare(`
   INSERT INTO app_state (user_id, key, value, updated_at)
-  VALUES (@userId, @key, @value, unixepoch())
+  VALUES (?, ?, ?, unixepoch())
   ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
 `);
 
@@ -332,13 +346,21 @@ export function getState(userId) {
 
 export function setState(userId, key, value) {
   if (!isStateKey(key)) throw new Error(`unknown state key: ${key}`);
-  upsert.run({ userId, key, value: JSON.stringify(value) });
+  upsert.run(userId, key, JSON.stringify(value));
 }
 
-export const setManyState = db.transaction((userId, entries) => {
+// Transaction helper that survives Turso replica mode: libsql's write
+// delegation cannot run interactive transactions (InvalidParserState / "cannot
+// rollback"), so on a replica the statements run individually — each prepared
+// statement is delegated and committed on its own. Multi-statement atomicity is
+// only guaranteed in local-file mode; functions where that matters (token /
+// recovery-code consumption) are written as single atomic statements instead.
+const txn = (fn) => (useReplica ? fn : db.transaction(fn));
+
+export const setManyState = txn((userId, entries) => {
   for (const [key, value] of Object.entries(entries)) {
     if (!isStateKey(key)) continue;
-    upsert.run({ userId, key, value: JSON.stringify(value) });
+    upsert.run(userId, key, JSON.stringify(value));
   }
 });
 
@@ -379,7 +401,9 @@ const deleteRecovery = db.prepare("DELETE FROM recovery_codes WHERE user_id = ?"
 const findRecovery = db.prepare(
   "SELECT id FROM recovery_codes WHERE user_id = ? AND code_hash = ? AND used = 0"
 );
-const markRecoveryUsed = db.prepare("UPDATE recovery_codes SET used = 1 WHERE id = ?");
+const markRecoveryUsed = db.prepare(
+  "UPDATE recovery_codes SET used = 1 WHERE id = ? AND used = 0"
+);
 const countUnusedRecovery = db.prepare(
   "SELECT COUNT(*) AS n FROM recovery_codes WHERE user_id = ? AND used = 0"
 );
@@ -387,22 +411,23 @@ const countUnusedRecovery = db.prepare(
 export const getTotp = (userId) => selectTotp.get(userId);
 export const setTotpSecret = (userId, secret) => setTotpSecretStmt.run(secret, userId);
 export const enableTotp = (userId) => enableTotpStmt.run(userId);
-export const disableTotp = db.transaction((userId) => {
+export const disableTotp = txn((userId) => {
   disableTotpStmt.run(userId);
   deleteRecovery.run(userId);
 });
 // Replace a user's recovery codes with a fresh set of hashes.
-export const replaceRecoveryCodes = db.transaction((userId, hashes) => {
+export const replaceRecoveryCodes = txn((userId, hashes) => {
   deleteRecovery.run(userId);
   for (const h of hashes) insertRecovery.run(userId, h);
 });
-// Consume one unused recovery code (returns true if it matched).
-export const consumeRecoveryCode = db.transaction((userId, codeHash) => {
+// Consume one unused recovery code (returns true if it matched). The UPDATE's
+// `used = 0` guard is the atomic claim — no transaction needed, so it behaves
+// identically in local and replica mode, and a code can never be used twice.
+export function consumeRecoveryCode(userId, codeHash) {
   const row = findRecovery.get(userId, codeHash);
   if (!row) return false;
-  markRecoveryUsed.run(row.id);
-  return true;
-});
+  return markRecoveryUsed.run(row.id).changes === 1;
+}
 export const countRecoveryCodes = (userId) => countUnusedRecovery.get(userId).n;
 
 // ---- Email tokens (verification + password reset) --------------------------
@@ -424,15 +449,17 @@ export function createEmailToken(userId, kind, tokenHash, expiresAtMs) {
 }
 export const deleteUserTokens = (userId, kind) => deleteUserKindTokens.run(userId, kind);
 
-// Validate and consume a token in one atomic step (single use). Returns the
-// user id on success, or null if the token is missing, wrong kind, or expired.
-export const consumeEmailToken = db.transaction((tokenHash, kind) => {
+// Validate and consume a token (single use). Returns the user id on success,
+// or null if the token is missing, wrong kind, or expired. The DELETE is the
+// atomic claim: with two concurrent consumers only one sees changes === 1, so
+// no transaction is needed (and none is possible in Turso replica mode).
+export function consumeEmailToken(tokenHash, kind) {
   const row = selectEmailToken.get(tokenHash);
   if (!row || row.kind !== kind) return null;
-  deleteEmailToken.run(tokenHash);
+  if (deleteEmailToken.run(tokenHash).changes !== 1) return null;
   if (row.expires_at < Date.now()) return null;
   return row.user_id;
-});
+}
 
 // Delete a user and all their data (app_state + sessions cascade via FK).
 export const deleteUser = (userId) => deleteUserStmt.run(userId);
@@ -506,7 +533,7 @@ export const destroyAllSessions = (userId) => deleteUserSessions.run(userId);
 
 const upsertTracker = db.prepare(`
   INSERT INTO tracker_accounts (user_id, provider, access_token_enc, refresh_token_enc, expires_at, external_id, scope, connected_at)
-  VALUES (@userId, @provider, @accessTokenEnc, @refreshTokenEnc, @expiresAt, @externalId, @scope, unixepoch())
+  VALUES (?, ?, ?, ?, ?, ?, ?, unixepoch())
   ON CONFLICT(user_id, provider) DO UPDATE SET
     access_token_enc = excluded.access_token_enc,
     refresh_token_enc = excluded.refresh_token_enc,
@@ -524,7 +551,16 @@ const deleteTracker = db.prepare(
   "DELETE FROM tracker_accounts WHERE user_id = ? AND provider = ?"
 );
 
-export const saveTrackerAccount = (row) => upsertTracker.run(row);
+export const saveTrackerAccount = (r) =>
+  upsertTracker.run(
+    r.userId,
+    r.provider,
+    r.accessTokenEnc,
+    r.refreshTokenEnc,
+    r.expiresAt,
+    r.externalId,
+    r.scope
+  );
 export const getTrackerAccount = (userId, provider) => selectTracker.get(userId, provider);
 export const listTrackerAccounts = (userId) => selectTrackersByUser.all(userId);
 export const removeTrackerAccount = (userId, provider) => deleteTracker.run(userId, provider);
@@ -539,7 +575,7 @@ export const saveTrackerTokens = (userId, provider, accessTokenEnc, refreshToken
 
 const upsertActivity = db.prepare(`
   INSERT INTO daily_activity (user_id, date, steps, calories_out, active_minutes, provider, synced_at)
-  VALUES (@userId, @date, @steps, @caloriesOut, @activeMinutes, @provider, unixepoch())
+  VALUES (?, ?, ?, ?, ?, ?, unixepoch())
   ON CONFLICT(user_id, date) DO UPDATE SET
     steps = excluded.steps,
     calories_out = excluded.calories_out,
@@ -554,7 +590,8 @@ const selectRecentActivity = db.prepare(
   "SELECT date, steps, calories_out, active_minutes, provider, synced_at FROM daily_activity WHERE user_id = ? ORDER BY date DESC LIMIT ?"
 );
 
-export const saveDailyActivity = (row) => upsertActivity.run(row);
+export const saveDailyActivity = (r) =>
+  upsertActivity.run(r.userId, r.date, r.steps, r.caloriesOut, r.activeMinutes, r.provider);
 export const getDailyActivity = (userId, date) => selectActivity.get(userId, date);
 export const getRecentActivity = (userId, limit = 30) => selectRecentActivity.all(userId, limit);
 
@@ -582,7 +619,7 @@ export const recentAudit = (limit = 100) => selectAudit.all(limit);
 const selectAttempt = db.prepare("SELECT count, locked_until FROM login_attempts WHERE key = ?");
 const bumpAttempt = db.prepare(`
   INSERT INTO login_attempts (key, count, locked_until, updated_at)
-  VALUES (@key, 1, 0, unixepoch())
+  VALUES (?, 1, 0, unixepoch())
   ON CONFLICT(key) DO UPDATE SET count = count + 1, updated_at = unixepoch()
 `);
 const setLocked = db.prepare("UPDATE login_attempts SET locked_until = ? WHERE key = ?");
@@ -603,7 +640,7 @@ export function loginLockedUntil(key) {
 // Record a failed attempt; once `maxAttempts` is reached, lock for `lockoutMs`.
 // Returns the lock-until time (epoch ms) if this attempt triggered a lock, else 0.
 export function registerFailedLogin(key, maxAttempts, lockoutMs) {
-  bumpAttempt.run({ key });
+  bumpAttempt.run(key);
   const row = selectAttempt.get(key);
   if (row.count >= maxAttempts) {
     const until = Date.now() + lockoutMs;
