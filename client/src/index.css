@@ -833,6 +833,14 @@ input[type="range"]:focus-visible::-moz-range-thumb {
   object-fit: contain;
   background: #fff;
 }
+/* Neutral tile shown while a photo loads or when none exists for an exercise. */
+.exdemo--placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  background: var(--bg-2);
+}
 /* Clickable wrapper around the thumbnail demo. */
 .exdemo-btn {
   flex: 0 0 auto;

@@ -94,11 +94,24 @@ function toInfo(e) {
   };
 }
 
+// Hand-mapped demos for the app's own compound exercise names, which the token
+// matcher can't resolve (e.g. "Cat–cow & open-book rotations"). Keys are the
+// normalized app names; values are exact dataset names. Both dash variants are
+// listed where the app copy uses an en dash.
+const ALIASES = new Map([
+  ["cat–cow & open-book rotations", "Cat Stretch"],
+  ["cat-cow & open-book rotations", "Cat Stretch"],
+  ["wall slides & band pass-throughs", "Band Pull Apart"],
+  ["slow neck rotations & upper-trap stretch", "Side Neck Stretch"],
+  ["single-leg balance hold", "Balance Board"],
+]);
+
 // Resolve an app exercise name to a dataset record, or null. May throw on a
 // network error (caller treats that as "try again later").
 export async function freeLookup(name) {
   const dataset = await loadDataset();
-  const e = bestMatch(dataset, name);
+  const alias = ALIASES.get(String(name).toLowerCase().trim());
+  const e = alias ? dataset.find((x) => x.name === alias) : bestMatch(dataset, name);
   return e ? toInfo(e) : null;
 }
 
