@@ -16,7 +16,9 @@ import {
   classifyUser,
 } from "./promptContext.js";
 
-const MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+// Default model: 2.5-flash — Google removed 2.0-flash from the free tier
+// (free-tier quota is 0 there), so 2.5 is the current no-cost workhorse.
+const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 export function geminiEnabled() {

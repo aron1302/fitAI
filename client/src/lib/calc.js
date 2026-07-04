@@ -70,8 +70,24 @@ function seeded(seed) {
   return x - Math.floor(x);
 }
 
-// Simulated + logged daily activity for the dashboard.
-export function todayActivity(profile, log = {}) {
+// Daily activity for the dashboard. Prefers real numbers synced from a connected
+// fitness tracker (`tracked` is today's daily_activity row from the server);
+// otherwise falls back to logged values, then to a stable per-day simulation so
+// the dashboard still demos without a device.
+export function todayActivity(profile, log = {}, tracked = null) {
+  if (tracked && (tracked.steps != null || tracked.calories_out != null)) {
+    const steps = tracked.steps ?? 0;
+    const activeMinutes = tracked.active_minutes ?? 0;
+    return {
+      steps,
+      stepGoal: 10000,
+      workoutMinutes: activeMinutes,
+      caloriesBurned: tracked.calories_out ?? 0,
+      activeMinutes,
+      activitiesCompleted: log.activitiesCompleted ?? (activeMinutes >= 30 ? 1 : 0),
+      source: tracked.provider, // e.g. "fitbit" — lets the UI label real data
+    };
+  }
   const day = new Date();
   const seed = day.getFullYear() * 1000 + day.getMonth() * 50 + day.getDate();
   const baseSteps =
@@ -98,6 +114,7 @@ export function todayActivity(profile, log = {}) {
     caloriesBurned,
     activeMinutes,
     activitiesCompleted: log.activitiesCompleted ?? (workoutMinutes > 0 ? 1 : 0),
+    source: null, // estimated, not from a device
   };
 }
 

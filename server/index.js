@@ -17,6 +17,9 @@ import {
   isStateKey,
   purgeExpiredSessions,
   closeDatabase,
+  listTrackerAccounts,
+  getDailyActivity,
+  logAudit,
 } from "./lib/db.js";
 import {
   signup,
@@ -76,6 +79,15 @@ import {
   coachReply as ruleCoach,
 } from "./lib/fallback.js";
 import { exerciseDbEnabled, exerciseInfo, exerciseImage } from "./lib/exercisedb.js";
+import {
+  fitbitEnabled,
+  beginAuth as fitbitBeginAuth,
+  completeAuth as fitbitCompleteAuth,
+  syncDay as fitbitSyncDay,
+  disconnect as fitbitDisconnect,
+  OAUTH_COOKIE as FITBIT_OAUTH_COOKIE,
+  PROVIDER as FITBIT,
+} from "./lib/fitbit.js";
 import {
   ProfileSchema,
   RecoverySchema,
@@ -283,6 +295,104 @@ app.get("/api/exercise-demo/image/:id", requireAuth, async (req, res) => {
   res.set("Content-Type", img.contentType);
   res.set("Cache-Control", "public, max-age=604800, immutable");
   res.send(img.buffer);
+});
+
+// ---- Fitness trackers (steps / calories / active minutes) ----
+// Fitbit is fully implemented (free public OAuth API). Garmin needs approval
+// into their developer program; Apple Health has no web API at all (native iOS
+// only) — both are reported to the UI so it can explain their status honestly.
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// Connection status for every provider, so the UI can render the devices panel.
+app.get("/api/trackers", requireAuth, (req, res) => {
+  const connected = new Map(listTrackerAccounts(req.userId).map((t) => [t.provider, t]));
+  res.json({
+    providers: {
+      fitbit: {
+        available: fitbitEnabled(),
+        connected: connected.has(FITBIT),
+        connectedAt: connected.get(FITBIT)?.connected_at ?? null,
+        note: fitbitEnabled()
+          ? null
+          : "Server is missing FITBIT_CLIENT_ID / FITBIT_CLIENT_SECRET.",
+      },
+      garmin: {
+        available: false,
+        connected: false,
+        note: "Requires approval into the Garmin Connect Developer Program.",
+      },
+      apple_health: {
+        available: false,
+        connected: false,
+        note: "Apple Health has no web API — it needs a native iOS app to read it.",
+      },
+    },
+  });
+});
+
+// Start the Fitbit OAuth flow. This is a top-level browser navigation (not a
+// fetch), so it 302s to Fitbit's consent screen with the signed state cookie.
+app.get("/api/trackers/fitbit/connect", requireAuth, (req, res) => {
+  if (!fitbitEnabled()) return res.status(503).send("Fitbit is not configured on this server.");
+  const { url, cookieValue, cookieMaxAge } = fitbitBeginAuth(req.userId);
+  res.cookie(FITBIT_OAUTH_COOKIE, cookieValue, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: config.isProd,
+    maxAge: cookieMaxAge,
+    path: "/api/trackers/fitbit",
+  });
+  res.redirect(url);
+});
+
+// OAuth callback from Fitbit. On success, bounce back into the app's profile
+// page; on failure, bounce back with an error the UI can show.
+app.get("/api/trackers/fitbit/callback", async (req, res) => {
+  res.clearCookie(FITBIT_OAUTH_COOKIE, { path: "/api/trackers/fitbit" });
+  try {
+    const userId = await fitbitCompleteAuth({
+      cookie: req.cookies?.[FITBIT_OAUTH_COOKIE],
+      state: String(req.query.state || ""),
+      code: String(req.query.code || ""),
+    });
+    logAudit({ event: "tracker_connected", userId, detail: FITBIT });
+    res.redirect("/profile?tracker=connected");
+  } catch (err) {
+    console.error("[fitbit] connect failed:", err.message);
+    res.redirect("/profile?tracker=error");
+  }
+});
+
+// Pull the activity summary for one day (the client sends its local date) and
+// store it. Returns the stored row.
+app.post("/api/trackers/fitbit/sync", requireAuth, async (req, res) => {
+  const date = String(req.body?.date || "");
+  if (!DATE_RE.test(date)) return res.status(400).json({ error: "date must be YYYY-MM-DD" });
+  try {
+    const row = await fitbitSyncDay(req.userId, date);
+    if (!row) return res.status(400).json({ error: "Fitbit is not connected" });
+    res.json({ activity: row });
+  } catch (err) {
+    console.error("[fitbit] sync failed:", err.message);
+    res.status(502).json({ error: "Couldn't reach Fitbit — please try again." });
+  }
+});
+
+// Disconnect Fitbit (revokes the token upstream, deletes our copy).
+app.post("/api/trackers/fitbit/disconnect", requireAuth, async (req, res) => {
+  await fitbitDisconnect(req.userId);
+  logAudit({ event: "tracker_disconnected", userId: req.userId, detail: FITBIT });
+  res.json({ ok: true });
+});
+
+// Synced activity for one day (defaults to nothing if never synced) — the
+// dashboard uses this to replace the simulated numbers with real ones.
+app.get("/api/activity/:date", requireAuth, (req, res) => {
+  if (!DATE_RE.test(req.params.date)) {
+    return res.status(400).json({ error: "date must be YYYY-MM-DD" });
+  }
+  res.json({ activity: getDailyActivity(req.userId, req.params.date) || null });
 });
 
 // ---- Persistence: per-user app state (profile, plans, logs, history) ----

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useApp } from "../context/AppContext.jsx";
 import PrivacySecurity from "../components/PrivacySecurity.jsx";
+import ConnectedDevices from "../components/ConnectedDevices.jsx";
 import {
   GOALS,
   ACTIVITY_LEVELS,
@@ -365,6 +366,8 @@ export default function Profile() {
           </span>
         </div>
       </div>
+
+      <ConnectedDevices />
 
       <PrivacySecurity />
     </>

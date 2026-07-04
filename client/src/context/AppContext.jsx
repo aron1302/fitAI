@@ -8,6 +8,9 @@ import {
   fetchRecoveryPlan,
   coachAct,
   streamCoach,
+  fetchTrackers,
+  fetchActivity,
+  syncFitbit,
 } from "../lib/api.js";
 
 // Opening message from the AI coach.
@@ -104,6 +107,52 @@ export function AppProvider({ children }) {
     diet: { loading: false, error: null },
     recovery: { loading: false, error: null },
   });
+
+  // Tracker connections + today's synced activity (steps/calories from a real
+  // device). `activity` is null until a tracker has synced for today; the
+  // dashboard falls back to the built-in estimate in that case.
+  const [trackers, setTrackers] = useState(null);
+  const [activity, setActivity] = useState(null);
+
+  // On boot: load connection status, then either pull a fresh sync from the
+  // connected tracker or fall back to the last stored value for today.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const t = await fetchTrackers();
+      if (cancelled) return;
+      setTrackers(t?.providers || null);
+      const today = dateKey();
+      if (t?.providers?.fitbit?.connected) {
+        try {
+          const row = await syncFitbit(today);
+          if (!cancelled) setActivity(row);
+          return;
+        } catch {
+          // network/provider hiccup — fall through to the stored value
+        }
+      }
+      const row = await fetchActivity(today);
+      if (!cancelled) setActivity(row);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Re-read connection status (used by the devices panel after connect/disconnect).
+  const refreshTrackers = async () => {
+    const t = await fetchTrackers();
+    setTrackers(t?.providers || null);
+    return t?.providers || null;
+  };
+
+  // Manual "Sync now" for today's numbers.
+  const syncActivity = async () => {
+    const row = await syncFitbit(dateKey());
+    setActivity(row);
+    return row;
+  };
 
   // The server is the source of truth; localStorage is only an instant-load
   // cache / offline fallback. `hydrated` gates server writes so the initial
@@ -313,6 +362,11 @@ export function AppProvider({ children }) {
     recoveryPayload,
     log,
     setLog,
+    // Fitness trackers + today's synced device activity.
+    trackers,
+    activity,
+    refreshTrackers,
+    syncActivity,
     workoutPlan,
     setWorkoutPlan,
     dietPlan,

@@ -86,8 +86,12 @@ const BAND_COLOR = {
 };
 
 export default function Dashboard() {
-  const { profile, recovery, readiness, log, workoutPlan } = useApp();
-  const act = todayActivity(profile, log);
+  const { profile, recovery, readiness, log, workoutPlan, activity } = useApp();
+  const act = todayActivity(profile, log, activity);
+  // Label real device data vs the built-in estimate, so testers know which is which.
+  const sourceLabel = act.source
+    ? `From ${act.source === "fitbit" ? "Fitbit" : act.source}`
+    : "Estimated — connect a tracker";
   // Today's scheduled training day (if any) and its index in the plan, so we can
   // deep-link straight to its logging page.
   const todayWorkout = workoutForDate(workoutPlan, new Date(), profile?.trainingDays);
@@ -119,14 +123,14 @@ export default function Dashboard() {
           label="Calories burned"
           value={act.caloriesBurned.toLocaleString()}
           unit="kcal"
-          sub="Active + resting"
+          sub={sourceLabel}
         />
         <StatCard
           icon="footprints"
           tint="tint-cyan"
           label="Steps"
           value={act.steps.toLocaleString()}
-          sub={`${stepPct}% of ${act.stepGoal.toLocaleString()} goal`}
+          sub={`${stepPct}% of ${act.stepGoal.toLocaleString()} goal · ${sourceLabel}`}
         />
         <StatCard
           icon="check"

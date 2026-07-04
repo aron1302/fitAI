@@ -243,6 +243,57 @@ export async function fetchExerciseDemo(name) {
   }
 }
 
+// ---- Fitness trackers ----
+
+// Connection status for every provider: { providers: { fitbit: {...}, ... } }.
+export async function fetchTrackers() {
+  try {
+    const r = await fetch("/api/trackers");
+    if (!r.ok) return null;
+    return await r.json();
+  } catch {
+    return null;
+  }
+}
+
+// Start the Fitbit OAuth flow. Full-page navigation (the server 302s to the
+// Fitbit consent screen and bounces back to /profile when done).
+export function connectFitbit() {
+  window.location.href = "/api/trackers/fitbit/connect";
+}
+
+// Pull today's steps/calories from Fitbit into the server. Returns the stored
+// activity row, or throws with a friendly message.
+export async function syncFitbit(date) {
+  const r = await fetch("/api/trackers/fitbit/sync", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ date }),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || "Sync failed");
+  return data.activity;
+}
+
+export async function disconnectFitbit() {
+  const r = await fetch("/api/trackers/fitbit/disconnect", {
+    method: "POST",
+    headers: jsonHeaders(),
+  });
+  if (!r.ok) throw new Error("Could not disconnect Fitbit");
+}
+
+// Synced activity for a date (YYYY-MM-DD) or null if never synced.
+export async function fetchActivity(date) {
+  try {
+    const r = await fetch(`/api/activity/${date}`);
+    if (!r.ok) return null;
+    return (await r.json()).activity;
+  } catch {
+    return null;
+  }
+}
+
 export async function getStatus() {
   try {
     const r = await fetch("/api/status");

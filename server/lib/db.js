@@ -151,6 +151,33 @@ const MIGRATIONS = [
         PRIMARY KEY (id, resolution)
       );`,
   },
+  {
+    // Fitness-tracker connections (OAuth tokens, AES-GCM-encrypted by
+    // cryptobox.js) and the daily activity totals synced from them.
+    name: "008_trackers",
+    sql: `
+      CREATE TABLE IF NOT EXISTS tracker_accounts (
+        user_id           INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        provider          TEXT NOT NULL,
+        access_token_enc  TEXT NOT NULL,
+        refresh_token_enc TEXT,
+        expires_at        INTEGER NOT NULL DEFAULT 0,
+        external_id       TEXT,
+        scope             TEXT,
+        connected_at      INTEGER NOT NULL DEFAULT (unixepoch()),
+        PRIMARY KEY (user_id, provider)
+      );
+      CREATE TABLE IF NOT EXISTS daily_activity (
+        user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        date           TEXT NOT NULL,
+        steps          INTEGER,
+        calories_out   INTEGER,
+        active_minutes INTEGER,
+        provider       TEXT NOT NULL,
+        synced_at      INTEGER NOT NULL DEFAULT (unixepoch()),
+        PRIMARY KEY (user_id, date)
+      );`,
+  },
 ];
 
 function runMigrations() {
@@ -418,6 +445,8 @@ export function exportUser(userId) {
     exportedAt: new Date().toISOString(),
     user: user ? { id: user.id, email: user.email, created_at: user.created_at } : null,
     state: getState(userId),
+    activity: getRecentActivity(userId, 365),
+    trackers: listTrackerAccounts(userId),
     sessions: listSessions(userId).map((s) => ({
       created_at: s.created_at,
       user_agent: s.user_agent,
@@ -470,6 +499,64 @@ export const listSessions = (userId) => selectSessionsByUser.all(userId);
 export const destroyOtherSessions = (userId, currentToken) =>
   deleteOtherSessions.run(userId, currentToken ? hashToken(currentToken) : "");
 export const destroyAllSessions = (userId) => deleteUserSessions.run(userId);
+
+// ---- Fitness trackers --------------------------------------------------------
+// One row per (user, provider) connection. Token values arrive already encrypted
+// (see cryptobox.js) — this layer never sees plaintext tokens.
+
+const upsertTracker = db.prepare(`
+  INSERT INTO tracker_accounts (user_id, provider, access_token_enc, refresh_token_enc, expires_at, external_id, scope, connected_at)
+  VALUES (@userId, @provider, @accessTokenEnc, @refreshTokenEnc, @expiresAt, @externalId, @scope, unixepoch())
+  ON CONFLICT(user_id, provider) DO UPDATE SET
+    access_token_enc = excluded.access_token_enc,
+    refresh_token_enc = excluded.refresh_token_enc,
+    expires_at = excluded.expires_at,
+    external_id = excluded.external_id,
+    scope = excluded.scope
+`);
+const selectTracker = db.prepare(
+  "SELECT * FROM tracker_accounts WHERE user_id = ? AND provider = ?"
+);
+const selectTrackersByUser = db.prepare(
+  "SELECT provider, external_id, connected_at FROM tracker_accounts WHERE user_id = ?"
+);
+const deleteTracker = db.prepare(
+  "DELETE FROM tracker_accounts WHERE user_id = ? AND provider = ?"
+);
+
+export const saveTrackerAccount = (row) => upsertTracker.run(row);
+export const getTrackerAccount = (userId, provider) => selectTracker.get(userId, provider);
+export const listTrackerAccounts = (userId) => selectTrackersByUser.all(userId);
+export const removeTrackerAccount = (userId, provider) => deleteTracker.run(userId, provider);
+
+// Refresh just the token fields after an OAuth token refresh.
+const updateTrackerTokens = db.prepare(`
+  UPDATE tracker_accounts SET access_token_enc = ?, refresh_token_enc = ?, expires_at = ?
+  WHERE user_id = ? AND provider = ?
+`);
+export const saveTrackerTokens = (userId, provider, accessTokenEnc, refreshTokenEnc, expiresAt) =>
+  updateTrackerTokens.run(accessTokenEnc, refreshTokenEnc, expiresAt, userId, provider);
+
+const upsertActivity = db.prepare(`
+  INSERT INTO daily_activity (user_id, date, steps, calories_out, active_minutes, provider, synced_at)
+  VALUES (@userId, @date, @steps, @caloriesOut, @activeMinutes, @provider, unixepoch())
+  ON CONFLICT(user_id, date) DO UPDATE SET
+    steps = excluded.steps,
+    calories_out = excluded.calories_out,
+    active_minutes = excluded.active_minutes,
+    provider = excluded.provider,
+    synced_at = excluded.synced_at
+`);
+const selectActivity = db.prepare(
+  "SELECT date, steps, calories_out, active_minutes, provider, synced_at FROM daily_activity WHERE user_id = ? AND date = ?"
+);
+const selectRecentActivity = db.prepare(
+  "SELECT date, steps, calories_out, active_minutes, provider, synced_at FROM daily_activity WHERE user_id = ? ORDER BY date DESC LIMIT ?"
+);
+
+export const saveDailyActivity = (row) => upsertActivity.run(row);
+export const getDailyActivity = (userId, date) => selectActivity.get(userId, date);
+export const getRecentActivity = (userId, limit = 30) => selectRecentActivity.all(userId, limit);
 
 // ---- Audit log -------------------------------------------------------------
 // Records security-relevant events. Stores only a hashed IP and an integer
