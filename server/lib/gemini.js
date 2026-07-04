@@ -34,7 +34,12 @@ async function geminiJSON(systemText, userText) {
     generationConfig: {
       responseMimeType: "application/json",
       temperature: 0.7,
-      maxOutputTokens: 4096,
+      maxOutputTokens: 8192,
+      // 2.5-flash "thinks" before answering, and thinking tokens count against
+      // maxOutputTokens — a long think truncates the JSON mid-string (seen as
+      // finishReason MAX_TOKENS ≈50% of the time). Structured plan output
+      // doesn't benefit from thinking, so turn it off.
+      thinkingConfig: { thinkingBudget: 0 },
     },
   };
   const r = await fetch(`${BASE}/${MODEL}:generateContent?key=${process.env.GEMINI_API_KEY}`, {
@@ -91,7 +96,13 @@ export async function geminiCoachStream(profile, messages, recovery, res) {
   const body = {
     systemInstruction: { parts: [{ text: coachSystem(profile, recovery) }] },
     contents,
-    generationConfig: { maxOutputTokens: 1024, temperature: 0.8 },
+    // Thinking tokens would eat the small reply budget (empty coach replies);
+    // chat answers don't need it either.
+    generationConfig: {
+      maxOutputTokens: 1024,
+      temperature: 0.8,
+      thinkingConfig: { thinkingBudget: 0 },
+    },
   };
   const r = await fetch(
     `${BASE}/${MODEL}:streamGenerateContent?alt=sse&key=${process.env.GEMINI_API_KEY}`,
