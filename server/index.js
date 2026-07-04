@@ -214,7 +214,14 @@ purgeExpiredSessions();
 
 // Liveness probe for the platform health check / load balancer / uptime monitor.
 // Deliberately cheap — no DB or AI-provider calls — so it never flaps under load.
-app.get("/healthz", (req, res) => res.json({ status: "ok", uptime: process.uptime() }));
+// `commit` (from Render's RENDER_GIT_COMMIT) tells us which build is running.
+app.get("/healthz", (req, res) =>
+  res.json({
+    status: "ok",
+    uptime: process.uptime(),
+    commit: (process.env.RENDER_GIT_COMMIT || "").slice(0, 7) || undefined,
+  })
+);
 
 // Stricter limiter for the auth endpoints (on top of per-account lockout).
 const authLimiter = rateLimit({
