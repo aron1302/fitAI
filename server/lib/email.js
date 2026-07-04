@@ -1,14 +1,41 @@
-// Transactional email (verification + password reset). Uses nodemailer with a
-// configured SMTP server in production; when no SMTP is set it falls back to a
-// console transport that prints the message — including the link — to the server
-// log, so the flows are fully testable in local development.
+// Transactional email (verification + password reset). Transport order:
+// Brevo HTTP API (works where SMTP ports are blocked, e.g. Render free tier),
+// then SMTP via nodemailer, then a console transport that prints the message —
+// including the link — to the server log, so flows are testable locally.
 
 import nodemailer from "nodemailer";
 import { config } from "./config.js";
 
+// Parse `MAIL_FROM` ("FitAI <a@b.com>" or a bare address) into Brevo's
+// { name, email } sender shape.
+function parseFrom(from) {
+  const m = /^\s*(.*?)\s*<([^>]+)>\s*$/.exec(from);
+  return m ? { name: m[1] || undefined, email: m[2] } : { email: from.trim() };
+}
+
+// Send through Brevo's transactional REST API (plain HTTPS — never blocked).
+async function sendViaBrevo({ to, subject, text, html }) {
+  const r = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: {
+      "api-key": config.brevoApiKey,
+      "Content-Type": "application/json",
+      accept: "application/json",
+    },
+    body: JSON.stringify({
+      sender: parseFrom(config.smtp.from),
+      to: [{ email: to }],
+      subject,
+      textContent: text,
+      htmlContent: html,
+    }),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!r.ok) throw new Error(`Brevo API ${r.status}: ${(await r.text()).slice(0, 200)}`);
+}
+
 let transporter = null;
 function getTransport() {
-  if (!config.emailEnabled) return null;
   if (transporter) return transporter;
   const { url, host, port, user, pass } = config.smtp;
   transporter = url
@@ -17,21 +44,26 @@ function getTransport() {
         host,
         port,
         secure: port === 465,
+        // Fail fast instead of nodemailer's 2-minute default — a blocked SMTP
+        // port should surface in the error log quickly.
+        connectionTimeout: 15000,
         auth: user ? { user, pass } : undefined,
       });
   return transporter;
 }
 
 async function send({ to, subject, text, html }) {
-  const t = getTransport();
-  if (!t) {
-    // No SMTP configured — log it so the link is usable in dev/testing.
-    console.log(
-      `\n  [email:console] To: ${to}\n  Subject: ${subject}\n  ${text.replace(/\n/g, "\n  ")}\n`
-    );
-    return;
+  if (config.brevoApiKey) {
+    return sendViaBrevo({ to, subject, text, html });
   }
-  await t.sendMail({ from: config.smtp.from, to, subject, text, html });
+  if (config.smtp.url || config.smtp.host) {
+    const t = getTransport();
+    return t.sendMail({ from: config.smtp.from, to, subject, text, html });
+  }
+  // No transport configured — log it so the link is usable in dev/testing.
+  console.log(
+    `\n  [email:console] To: ${to}\n  Subject: ${subject}\n  ${text.replace(/\n/g, "\n  ")}\n`
+  );
 }
 
 function htmlWrap(heading, body, link, cta) {

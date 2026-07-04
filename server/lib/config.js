@@ -63,8 +63,13 @@ if (isProd && !process.env.APP_URL) {
   console.warn("  [config] APP_URL is unset — email links will point at localhost. Set it in production.");
 }
 
-// Email transport: SMTP if configured, otherwise a console transport that prints
-// messages (incl. links) to the server log so flows are testable locally.
+// Email transport, in order of preference:
+//  1. Brevo HTTP API (BREVO_API_KEY) — works on hosts that block SMTP ports
+//     (Render's free tier blocks 25/465/587 outbound).
+//  2. SMTP (SMTP_URL or SMTP_HOST/...).
+//  3. Console transport that prints messages (incl. links) to the server log so
+//     flows are testable locally.
+const brevoApiKey = process.env.BREVO_API_KEY || "";
 const smtp = {
   url: process.env.SMTP_URL || "",
   host: process.env.SMTP_HOST || "",
@@ -73,10 +78,10 @@ const smtp = {
   pass: process.env.SMTP_PASS || "",
   from: process.env.MAIL_FROM || "FitAI <no-reply@fitai.local>",
 };
-const emailEnabled = Boolean(smtp.url || smtp.host);
+const emailEnabled = Boolean(brevoApiKey || smtp.url || smtp.host);
 if (isProd && !emailEnabled) {
   console.warn(
-    "  [config] No SMTP configured — verification/reset emails will only print to the log. Configure SMTP_* for production."
+    "  [config] No email transport configured — verification/reset emails will only print to the log. Set BREVO_API_KEY (or SMTP_*) for production."
   );
 }
 
@@ -88,6 +93,7 @@ export const config = {
   allowedOrigins,
   trustProxy,
   smtp,
+  brevoApiKey,
   emailEnabled,
   // Lockout policy for repeated failed logins.
   maxLoginAttempts: Number(process.env.MAX_LOGIN_ATTEMPTS) || 8,
