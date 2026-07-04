@@ -1,5 +1,12 @@
 import "dotenv/config";
+import dns from "node:dns";
 import express from "express";
+
+// Prefer IPv4 for outbound connections. Some hosts (e.g. Render) advertise
+// IPv6 routes that silently drop traffic to external APIs; Node's fetch then
+// burns ~10s per address before failing (seen as every Gemini call "failing"
+// after ~20s and falling back to the rule-based engine).
+dns.setDefaultResultOrder("ipv4first");
 import cors from "cors";
 import helmet from "helmet";
 import path from "node:path";

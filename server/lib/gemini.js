@@ -41,6 +41,7 @@ async function geminiJSON(systemText, userText) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(60000),
   });
   if (!r.ok) throw new Error(`Gemini ${r.status}: ${(await r.text()).slice(0, 200)}`);
   const data = await r.json();
@@ -98,6 +99,7 @@ export async function geminiCoachStream(profile, messages, recovery, res) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(90000),
     }
   );
   // Throw before writing anything so the caller can fall back cleanly.
