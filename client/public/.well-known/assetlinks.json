@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.onrender.fitai_aron.twa",
+    "sha256_cert_fingerprints": ["F0:B8:64:93:30:0E:A0:86:D5:C7:A2:47:E7:45:02:68:36:0B:22:D4:CA:40:C6:F9:7C:1C:C0:7B:73:6D:AF:34"]
+  }
+}]

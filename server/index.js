@@ -613,6 +613,13 @@ if (fs.existsSync(distDir)) {
     res.type("text/plain; charset=utf-8");
     res.sendFile(path.join(distDir, ".well-known", "security.txt"));
   });
+  // Android Digital Asset Links: proves to Android that the TWA-packaged app
+  // (PWABuilder APK) owns this origin, so it runs full-screen without the
+  // browser bar. Must exactly match the APK's package name + signing cert.
+  app.get("/.well-known/assetlinks.json", (req, res) => {
+    res.type("application/json");
+    res.sendFile(path.join(distDir, ".well-known", "assetlinks.json"));
+  });
   app.use(express.static(distDir));
   app.get("*", (req, res) => res.sendFile(path.join(distDir, "index.html")));
 }
