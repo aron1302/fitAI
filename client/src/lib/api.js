@@ -1,5 +1,16 @@
 // Thin client for the backend API.
 
+// Translate low-level fetch failures into a human message. Browsers throw a
+// TypeError ("Failed to fetch" / "Load failed" / "NetworkError…") when the
+// request never completed — on our free-tier host that usually means the
+// server is still waking from its idle sleep.
+export function friendlyError(err, fallback = "Request failed") {
+  if (err instanceof TypeError) {
+    return "Can't reach the server — it may just be waking up. Please try again in ~30 seconds.";
+  }
+  return err?.message || fallback;
+}
+
 // ---- CSRF ----
 // The server issues a non-httpOnly `fitai_csrf` cookie and requires its value
 // echoed in the X-CSRF-Token header on every state-changing request (double

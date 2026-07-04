@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
-import { requestPasswordReset } from "../lib/api.js";
+import { requestPasswordReset, friendlyError } from "../lib/api.js";
 
 // Combined login / signup / forgot-password / 2FA screen shown when there's no
 // active session.
@@ -19,6 +19,34 @@ export default function Auth() {
 
   const isSignup = mode === "signup";
   const isForgot = mode === "forgot";
+
+  // Free-tier hosting sleeps when idle and takes ~30s to wake. Probe the server
+  // on mount; if it doesn't answer promptly, tell the user what's happening
+  // instead of letting their first login attempt die with "Failed to fetch".
+  const [waking, setWaking] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    const slowTimer = setTimeout(() => {
+      if (!cancelled) setWaking(true);
+    }, 2500);
+    (async () => {
+      for (let i = 0; i < 20 && !cancelled; i++) {
+        try {
+          const r = await fetch("/healthz", { cache: "no-store" });
+          if (r.ok) break;
+        } catch {
+          // still waking — try again shortly
+        }
+        await new Promise((res) => setTimeout(res, 3000));
+      }
+      clearTimeout(slowTimer);
+      if (!cancelled) setWaking(false);
+    })();
+    return () => {
+      cancelled = true;
+      clearTimeout(slowTimer);
+    };
+  }, []);
 
   const goMode = (m) => {
     setMode(m);
@@ -51,7 +79,7 @@ export default function Auth() {
         if (data?.twoFactorRequired) setTwoFA(data.challenge);
       }
     } catch (err) {
-      setError(err.message);
+      setError(friendlyError(err));
     } finally {
       setBusy(false);
     }
@@ -86,6 +114,13 @@ export default function Auth() {
         </div>
         <h1 className="auth-title">{title}</h1>
         <p className="auth-sub">{sub}</p>
+
+        {waking && (
+          <p className="auth-sub" style={{ color: "var(--warn)", marginTop: 0 }}>
+            ⏳ Waking up the server — this can take up to 30 seconds on the free preview
+            hosting. Hang tight…
+          </p>
+        )}
 
         {twoFA ? (
           <>
