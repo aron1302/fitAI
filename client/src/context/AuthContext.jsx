@@ -88,8 +88,13 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
-  // Re-fetch the current user (e.g. after email verification) without a reload.
-  const refreshUser = () => fetchMe().then(setUser);
+  // Re-fetch the current user (e.g. after email verification) without a
+  // reload. Resolves with the fresh user so callers can react to the result.
+  const refreshUser = () =>
+    fetchMe().then((u) => {
+      setUser(u);
+      return u;
+    });
 
   const resendVerification = () => resendVerificationRequest();
 
