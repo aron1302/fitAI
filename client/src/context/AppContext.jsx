@@ -47,6 +47,7 @@ const DEFAULT_PROFILE = {
   age: 30,
   sex: "male",
   heightCm: 178,
+  heightUnit: "cm", // display/entry preference only; heightCm stays canonical
   weightKg: 80,
   goal: "recomp",
   activityLevel: "moderate",

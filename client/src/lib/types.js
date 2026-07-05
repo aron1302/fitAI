@@ -11,7 +11,8 @@
  * @property {string} [name]
  * @property {number} [age]
  * @property {"male"|"female"} [sex]
- * @property {number} [heightCm]
+ * @property {number} [heightCm] - canonical height; ft/in entry converts to cm
+ * @property {"cm"|"ft"} [heightUnit] - display/entry unit preference (default "cm")
  * @property {number} [weightKg]
  * @property {"weight_loss"|"muscle_gain"|"recomp"|"maintain"|"endurance"} [goal]
  * @property {string} [activityLevel]

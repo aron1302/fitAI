@@ -46,6 +46,18 @@ export default function Profile() {
 
   const num = (v) => (v === "" ? "" : Number(v));
 
+  // Height is always STORED in cm (BMR and the AI prompts use heightCm); the
+  // ft/in fields are just a different view of it. Rounding to the nearest inch
+  // first keeps the ft/in display stable as the user types (no 11.6" → 12"
+  // carry surprises), and whole-cm storage keeps the cm view clean.
+  const CM_PER_IN = 2.54;
+  const heightUnit = profile.heightUnit || "cm";
+  const totalIn = Math.round((profile.heightCm || 0) / CM_PER_IN);
+  const hFt = Math.floor(totalIn / 12);
+  const hIn = totalIn % 12;
+  const setHeightFtIn = (ft, inch) =>
+    updateProfile({ heightCm: Math.round((ft * 12 + inch) * CM_PER_IN) });
+
   // Selected training weekdays — fall back to the default spread for the user's
   // days/week until they customise it.
   const trainingDays = profile.trainingDays ?? defaultTrainingDays(profile.daysPerWeek);
@@ -101,12 +113,50 @@ export default function Profile() {
               </select>
             </div>
             <div className="field">
-              <label>Height (cm)</label>
-              <input
-                type="number"
-                value={profile.heightCm}
-                onChange={(e) => updateProfile({ heightCm: num(e.target.value) })}
-              />
+              <label>Height</label>
+              <div className="row" style={{ gap: 8 }}>
+                {heightUnit === "cm" ? (
+                  <input
+                    type="number"
+                    min="0"
+                    aria-label="Height in centimetres"
+                    style={{ flex: 1, minWidth: 0 }}
+                    value={profile.heightCm}
+                    onChange={(e) => updateProfile({ heightCm: num(e.target.value) })}
+                  />
+                ) : (
+                  <>
+                    <input
+                      type="number"
+                      min="0"
+                      aria-label="Feet"
+                      placeholder="ft"
+                      style={{ flex: 1, minWidth: 0 }}
+                      value={hFt}
+                      onChange={(e) => setHeightFtIn(Math.max(0, num(e.target.value) || 0), hIn)}
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      max="11"
+                      aria-label="Inches"
+                      placeholder="in"
+                      style={{ flex: 1, minWidth: 0 }}
+                      value={hIn}
+                      onChange={(e) => setHeightFtIn(hFt, Math.max(0, num(e.target.value) || 0))}
+                    />
+                  </>
+                )}
+                <select
+                  aria-label="Height unit"
+                  style={{ width: "auto", flexShrink: 0 }}
+                  value={heightUnit}
+                  onChange={(e) => updateProfile({ heightUnit: e.target.value })}
+                >
+                  <option value="cm">cm</option>
+                  <option value="ft">ft / in</option>
+                </select>
+              </div>
             </div>
             <div className="field">
               <label>Weight (kg)</label>
