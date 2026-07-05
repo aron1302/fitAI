@@ -12,7 +12,7 @@ const IMG_BASE =
   "https://cdn.jsdelivr.net/gh/yuhonas/free-exercise-db@main/exercises/";
 
 const STOP = new Set(["the", "a", "an", "with", "to", "of", "and", "or", "on", "in", "for"]);
-function tokenize(s) {
+export function tokenize(s) {
   return s
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
@@ -51,7 +51,8 @@ function tokenMatches(a, b) {
 // Best dataset entry for an app exercise name, by distinct-token overlap. Prefers
 // a matching prefix (e.g. "Barbell Bench Press" → "Barbell Bench Press - Medium
 // Grip" over "Barbell Guillotine Bench Press") then the fewest extra words.
-function bestMatch(dataset, name) {
+// Exported for tests.
+export function bestMatch(dataset, name) {
   const q = tokenize(name);
   if (!q.length) return null;
   let best = null;
@@ -77,8 +78,12 @@ function bestMatch(dataset, name) {
       bestExtra = extra;
     }
   }
-  // Require a reasonable overlap so we don't return a spurious match.
-  if (!best || bestMatched < Math.max(1, Math.ceil(q.length / 2))) return null;
+  // Require a reasonable overlap so we don't return a spurious match. Multi-word
+  // names need at least two matching words — one shared word (e.g. the
+  // "exercise" in "New exercise" vs "Exercise Ball Crunch") says nothing about
+  // the movement, and a wrong photo is worse than the neutral placeholder.
+  const needed = Math.max(q.length > 1 ? 2 : 1, Math.ceil(q.length / 2));
+  if (!best || bestMatched < needed) return null;
   return best;
 }
 

@@ -31,12 +31,18 @@ function tripCooldown() {
   cooldownUntil = Date.now() + 5 * 60 * 1000;
 }
 
+// Placeholder names the client seeds for not-yet-named exercises. These carry
+// no information about the movement, so any lookup "match" would be wrong.
+// Checked before the cache so historic bogus matches for them stop serving too.
+const PLACEHOLDER_NAME = /^new exercise\b/;
+
 // Resolve an exercise name to its record ({ id, name, target, ... }) or null.
 // Serves from the self-hosted store first; otherwise looks it up in the free
 // dataset and caches the result. Never throws.
 export async function exerciseInfo(name) {
   if (!name) return null;
   const key = name.toLowerCase().trim();
+  if (PLACEHOLDER_NAME.test(key)) return null;
   const cached = getCachedExerciseInfo(key);
   if (cached.hit) return cached.info;
   if (apiPaused()) return null;

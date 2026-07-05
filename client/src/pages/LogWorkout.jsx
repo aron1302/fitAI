@@ -29,6 +29,17 @@ export default function LogWorkout() {
   const rawDate = params.get("date");
   const logDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate || "") ? rawDate : today;
 
+  // Logged sets are keyed by exercise name. If a day somehow holds several
+  // exercises with the same name (e.g. rows added but never renamed), suffix the
+  // repeats so each card logs into its own bucket instead of all sharing one.
+  const seen = new Map();
+  const logKeys = (day?.exercises || []).map((ex) => {
+    const name = ex.name?.trim() || "Exercise";
+    const n = (seen.get(name) || 0) + 1;
+    seen.set(name, n);
+    return n === 1 ? name : `${name} (${n})`;
+  });
+
   if (!day) {
     return (
       <>
@@ -90,7 +101,7 @@ export default function LogWorkout() {
                 )}
               </div>
             </div>
-            <WorkoutLogger exercise={ex.name} day={logDate} />
+            <WorkoutLogger exercise={logKeys[j]} day={logDate} />
           </div>
         ))}
       </div>

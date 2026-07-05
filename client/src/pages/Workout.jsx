@@ -5,6 +5,26 @@ import { readinessBand, engineLabel } from "../lib/calc.js";
 import SuggestEdit from "../components/SuggestEdit.jsx";
 import ExerciseDemo from "../components/ExerciseDemo.jsx";
 
+// Tidy user edits before they become the plan. The exercise NAME is what drives
+// the demo picture and the set-log bucket, so an exercise left with a blank name
+// (or the old "New exercise" default) but text in the notes field almost
+// certainly had its name typed into the wrong box — promote the notes to the
+// name. Rows left entirely blank are dropped.
+function normalizeDays(days) {
+  return days.map((day) => ({
+    ...day,
+    exercises: day.exercises
+      .map((ex) => {
+        const name = (ex.name || "").trim();
+        const notes = (ex.notes || "").trim();
+        if ((name === "" || name === "New exercise") && notes)
+          return { ...ex, name: notes, notes: "" };
+        return { ...ex, name, notes };
+      })
+      .filter((ex) => ex.name !== ""),
+  }));
+}
+
 export default function Workout() {
   const {
     profile,
@@ -29,7 +49,7 @@ export default function Workout() {
   const startEdit = () => setDraft(structuredClone(plan));
   const cancelEdit = () => setDraft(null);
   const saveEdit = () => {
-    setPlan({ ...draft, _edited: true });
+    setPlan({ ...draft, days: normalizeDays(draft.days), _edited: true });
     setDraft(null);
   };
   const patchDraft = (patch) => setDraft((d) => ({ ...d, ...patch }));
@@ -46,7 +66,7 @@ export default function Workout() {
       days: d.days.map((day, i) => (i === di ? { ...day, exercises: fn(day.exercises) } : day)),
     }));
   const addEx = (di) =>
-    patchDayEx(di, (exs) => [...exs, { name: "New exercise", sets: 3, reps: "8-12", notes: "" }]);
+    patchDayEx(di, (exs) => [...exs, { name: "", sets: 3, reps: "8-12", notes: "" }]);
   const removeEx = (di, ei) => patchDayEx(di, (exs) => exs.filter((_, i) => i !== ei));
   const addDay = () =>
     setDraft((d) => ({
@@ -215,7 +235,7 @@ export default function Workout() {
                           className="edit-inp sm"
                           value={ex.name}
                           onChange={(e) => patchEx(i, j, { name: e.target.value })}
-                          placeholder="Exercise"
+                          placeholder="Exercise name"
                         />
                         <input
                           className="edit-inp sm"
