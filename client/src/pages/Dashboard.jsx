@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useApp } from "../context/AppContext.jsx";
+import { useApp, dateKey } from "../context/AppContext.jsx";
 import { STAT_ICONS } from "../components/NavIcons.jsx";
+import ExerciseHistory from "../components/ExerciseHistory.jsx";
 import {
   nutritionTargets,
   todayActivity,
@@ -86,8 +88,13 @@ const BAND_COLOR = {
 };
 
 export default function Dashboard() {
-  const { profile, recovery, readiness, log, workoutPlan, activity } = useApp();
+  const { profile, recovery, readiness, log, workoutPlan, activity, workoutLog } = useApp();
   const act = todayActivity(profile, log, activity);
+  // Exercise whose cross-session history modal is open (null = closed), plus
+  // the set of names that have any logged sets at all — only those get a
+  // History button.
+  const [hxExercise, setHxExercise] = useState(null);
+  const loggedNames = new Set(Object.values(workoutLog).flatMap((d) => Object.keys(d)));
   // Label real device data vs the built-in estimate, so testers know which is which.
   const sourceLabel = act.source
     ? `From ${act.source === "fitbit" ? "Fitbit" : act.source}`
@@ -257,6 +264,35 @@ export default function Dashboard() {
               ? " It will automatically deload to protect recovery."
               : " You're cleared for a productive session."}
           </p>
+          {todayWorkout?.exercises?.length > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              {todayWorkout.exercises.map((ex, j) => (
+                <div key={j} className="hx-ex" style={{ padding: "8px 0" }}>
+                  <div
+                    className="row"
+                    style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}
+                  >
+                    <span className="ex-name">{ex.name}</span>
+                    <span className="row" style={{ gap: 10, alignItems: "baseline" }}>
+                      <span className="ex-scheme">
+                        {ex.sets} × {ex.reps}
+                      </span>
+                      {loggedNames.has(ex.name) && (
+                        <button
+                          type="button"
+                          className="btn ghost sm"
+                          style={{ padding: "3px 9px", fontSize: 12 }}
+                          onClick={() => setHxExercise(ex.name)}
+                        >
+                          📈 History
+                        </button>
+                      )}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="row" style={{ gap: 10, marginTop: 8, flexWrap: "wrap" }}>
             <Link to="/workout">
               <button className="btn">View workout plan →</button>
@@ -267,6 +303,13 @@ export default function Dashboard() {
               </Link>
             )}
           </div>
+          {hxExercise && (
+            <ExerciseHistory
+              exercise={hxExercise}
+              baselineDay={dateKey()}
+              onClose={() => setHxExercise(null)}
+            />
+          )}
         </div>
         <div className="card">
           <div className="card-title-row">
