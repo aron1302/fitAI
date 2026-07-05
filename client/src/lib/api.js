@@ -26,16 +26,16 @@ function jsonHeaders(extra = {}) {
 
 // ---- Authentication ----
 
-// Return the current user ({ id, email }) or null if not logged in.
+// Return the current user ({ id, email }) or null if not logged in. Only a 401
+// means "not logged in"; a network error or 5xx (e.g. our free-tier host
+// mid-cold-start) THROWS so callers don't mistake a temporarily unreachable
+// server for a dead session and bounce a still-valid user to the login screen.
 /** @returns {Promise<import("./types.js").User | null>} */
 export async function fetchMe() {
-  try {
-    const r = await fetch("/api/auth/me");
-    if (!r.ok) return null;
-    return (await r.json()).user;
-  } catch {
-    return null;
-  }
+  const r = await fetch("/api/auth/me");
+  if (r.status === 401) return null;
+  if (!r.ok) throw new Error(`auth check failed (${r.status})`);
+  return (await r.json()).user;
 }
 
 // Signup returns the full response: { user } when the account was created and a

@@ -25,16 +25,60 @@ function clearCache() {
   }
 }
 
-export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+// Last-known signed-in user, so the app can open instantly (and work offline /
+// through server cold starts) without waiting for the auth check. The session
+// cookie is still the real credential — the server 401s anything stale.
+const USER_CACHE_KEY = "fitai.user";
 
-  // Check for an existing session on boot.
+function cachedUser() {
+  try {
+    return JSON.parse(localStorage.getItem(USER_CACHE_KEY)) || null;
+  } catch {
+    return null;
+  }
+}
+
+export function AuthProvider({ children }) {
+  const [user, setUserState] = useState(cachedUser);
+  // With a cached user we render the app immediately and verify in the
+  // background; otherwise hold the splash until the server answers.
+  const [loading, setLoading] = useState(() => cachedUser() === null);
+
+  // Keep the localStorage copy in step with every auth state change.
+  const setUser = (u) => {
+    setUserState(u);
+    try {
+      if (u) localStorage.setItem(USER_CACHE_KEY, JSON.stringify(u));
+      else localStorage.removeItem(USER_CACHE_KEY);
+    } catch {
+      // storage unavailable — cookie auth still works, just no instant boot
+    }
+  };
+
+  // Check for an existing session on boot. A definitive answer (user or 401)
+  // is applied; an unreachable server (free-tier instance waking from sleep,
+  // or offline) is retried with backoff instead of being treated as a logout —
+  // the session cookie is still valid, only the server is napping.
   useEffect(() => {
-    fetchMe().then((u) => {
-      setUser(u);
-      setLoading(false);
-    });
+    let cancelled = false;
+    let delay = 2000;
+    const verify = () =>
+      fetchMe().then(
+        (u) => {
+          if (cancelled) return;
+          setUser(u);
+          setLoading(false);
+        },
+        () => {
+          if (cancelled) return;
+          setTimeout(verify, delay);
+          delay = Math.min(delay * 1.5, 15000);
+        }
+      );
+    verify();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Returns the raw result: when { twoFactorRequired } the caller must complete
@@ -90,11 +134,15 @@ export function AuthProvider({ children }) {
 
   // Re-fetch the current user (e.g. after email verification) without a
   // reload. Resolves with the fresh user so callers can react to the result.
+  // If the server is momentarily unreachable, keep the current state.
   const refreshUser = () =>
-    fetchMe().then((u) => {
-      setUser(u);
-      return u;
-    });
+    fetchMe().then(
+      (u) => {
+        setUser(u);
+        return u;
+      },
+      () => user
+    );
 
   const resendVerification = () => resendVerificationRequest();
 
