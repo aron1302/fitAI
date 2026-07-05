@@ -1095,6 +1095,77 @@ input[type="range"]:focus-visible::-moz-range-thumb {
   color: var(--accent);
 }
 
+/* ---------- Exercise history modal & logged-workout card ---------- */
+.hx-modal {
+  width: min(480px, 100%);
+  max-height: 82vh;
+  overflow-y: auto;
+}
+.hx-title {
+  margin: 0 0 4px;
+  font-size: 19px;
+  padding-right: 30px;
+}
+.hx-row {
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.hx-row.sel {
+  background: rgba(74, 222, 128, 0.05);
+  margin: 0 -10px;
+  padding-left: 10px;
+  padding-right: 10px;
+  border-radius: 10px;
+  border-top-color: transparent;
+}
+.hx-row-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.hx-date {
+  font-weight: 700;
+  font-size: 13.5px;
+}
+.hx-tag {
+  margin-left: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.hx-stats {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.hx-delta {
+  font-weight: 700;
+  font-size: 12px;
+}
+.hx-delta.up {
+  color: var(--accent);
+}
+.hx-delta.down {
+  color: var(--warn);
+}
+.hx-sets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 7px;
+}
+/* One exercise inside the Calendar's "Logged workout" card. */
+.hx-ex {
+  padding: 11px 0;
+  border-top: 1px solid var(--border);
+}
+.hx-ex:first-of-type {
+  border-top: none;
+}
+
 .meal {
   padding: 14px 0;
   border-top: 1px solid var(--border);
@@ -1714,6 +1785,10 @@ input[type="range"]:focus-visible::-moz-range-thumb {
 }
 .cal-dot.dt {
   background: var(--accent-2);
+}
+/* Day has actual logged sets. */
+.cal-dot.lg {
+  background: var(--warn);
 }
 
 /* ---------- Meal check-off ---------- */

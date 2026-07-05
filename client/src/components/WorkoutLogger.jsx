@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useApp, dateKey } from "../context/AppContext.jsx";
+import ExerciseHistory from "./ExerciseHistory.jsx";
 
 // Per-exercise set logger shown under each exercise on the Log Workout page.
 // Lets the user record the weight × reps they actually performed, shows what
@@ -10,9 +11,11 @@ export default function WorkoutLogger({ exercise, day = dateKey() }) {
   const { workoutLog, logSet, removeSet, lastSession } = useApp();
   const [weight, setWeight] = useState("");
   const [reps, setReps] = useState("");
+  const [showHistory, setShowHistory] = useState(false);
 
   const sets = workoutLog[day]?.[exercise] || [];
   const last = lastSession(exercise, day);
+  const hasHistory = sets.length > 0 || !!last;
   const volume = sets.reduce((sum, s) => sum + (s.weight || 0) * (s.reps || 0), 0);
 
   // Top weight today vs last session, so we can flag a new best.
@@ -33,12 +36,27 @@ export default function WorkoutLogger({ exercise, day = dateKey() }) {
     <div className="logger">
       <div className="logger-head">
         <span className="logger-title">Log sets</span>
-        {last && (
-          <span className="logger-last" title={`Last logged ${last.date}`}>
-            Last: {summarize(last.sets)}
-          </span>
-        )}
+        <span className="row" style={{ gap: 10, alignItems: "baseline" }}>
+          {last && (
+            <span className="logger-last" title={`Last logged ${last.date}`}>
+              Last: {summarize(last.sets)}
+            </span>
+          )}
+          {hasHistory && (
+            <button
+              type="button"
+              className="btn ghost sm"
+              style={{ padding: "3px 9px", fontSize: 12 }}
+              onClick={() => setShowHistory(true)}
+            >
+              📈 History
+            </button>
+          )}
+        </span>
       </div>
+      {showHistory && (
+        <ExerciseHistory exercise={exercise} baselineDay={day} onClose={() => setShowHistory(false)} />
+      )}
 
       {sets.length > 0 && (
         <div className="logged-sets">

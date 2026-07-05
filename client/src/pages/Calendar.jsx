@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useApp, dateKey } from "../context/AppContext.jsx";
 import { engineLabel, workoutForDate } from "../lib/calc.js";
+import ExerciseHistory from "../components/ExerciseHistory.jsx";
 
 const MONTHS = [
   "January",
@@ -256,6 +257,62 @@ function ActivitiesCard({ date, activities, onAdd, onRemove }) {
   );
 }
 
+// The sets actually logged on a date (from the workout log), one block per
+// exercise, with a per-exercise "History" opening the full cross-session
+// comparison for that movement.
+function LoggedWorkoutCard({ date, dayLog }) {
+  const [hxExercise, setHxExercise] = useState(null);
+  const entries = Object.entries(dayLog);
+  const volume = (sets) => sets.reduce((sum, s) => sum + (s.weight || 0) * (s.reps || 0), 0);
+  const total = entries.reduce((sum, [, sets]) => sum + volume(sets), 0);
+
+  return (
+    <div className="card" style={{ marginBottom: 18 }}>
+      <div className="card-title-row">
+        <h3>✓ Logged workout</h3>
+        {total > 0 && <span className="engine-tag">{total.toLocaleString()} kg total volume</span>}
+      </div>
+      {entries.map(([name, sets]) => (
+        <div key={name} className="hx-ex">
+          <div className="row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+            <span className="ex-name">{name}</span>
+            <span className="row" style={{ gap: 10, alignItems: "baseline" }}>
+              {volume(sets) > 0 && (
+                <span className="muted" style={{ fontSize: 12.5 }}>
+                  {volume(sets).toLocaleString()} kg vol
+                </span>
+              )}
+              <button
+                type="button"
+                className="btn ghost sm"
+                style={{ padding: "3px 9px", fontSize: 12 }}
+                onClick={() => setHxExercise(name)}
+              >
+                📈 History
+              </button>
+            </span>
+          </div>
+          <div className="hx-sets">
+            {sets.map((s, i) => (
+              <span key={i} className="set-chip">
+                <b>{i + 1}</b>
+                {s.weight ? `${s.weight} kg` : "BW"} × {s.reps}
+              </span>
+            ))}
+          </div>
+        </div>
+      ))}
+      {hxExercise && (
+        <ExerciseHistory
+          exercise={hxExercise}
+          baselineDay={date}
+          onClose={() => setHxExercise(null)}
+        />
+      )}
+    </div>
+  );
+}
+
 // Shown when the user has removed the auto-scheduled workout for a day.
 function RemovedWorkoutNote({ day, onRestore }) {
   return (
@@ -277,8 +334,16 @@ function RemovedWorkoutNote({ day, onRestore }) {
 }
 
 export default function Calendar() {
-  const { history, workoutPlan, profile, calendar, addActivity, removeActivity, setWorkoutHidden } =
-    useApp();
+  const {
+    history,
+    workoutPlan,
+    profile,
+    calendar,
+    workoutLog,
+    addActivity,
+    removeActivity,
+    setWorkoutHidden,
+  } = useApp();
   const trainingDays = profile?.trainingDays;
   const today = new Date();
   const todayKey = dateKey(today);
@@ -324,6 +389,9 @@ export default function Calendar() {
   const scheduledDay = hideWorkout ? null : scheduledRaw;
   const scheduledIdx = scheduledDay ? workoutPlan.days.indexOf(scheduledDay) : -1;
   const isUpcoming = selected >= todayKey;
+  // Sets actually recorded on the selected date, shown as their own card.
+  const selectedLog = workoutLog[selected];
+  const hasLog = selectedLog && Object.keys(selectedLog).length > 0;
 
   return (
     <>
@@ -381,7 +449,8 @@ export default function Calendar() {
             const isSel = key === selected;
             const isPast = key < todayKey;
             const isFuture = key > todayKey;
-            const has = (e && (e.workout || e.diet)) || sched || acts.length > 0;
+            const logged = Object.keys(workoutLog[key] || {}).length > 0;
+            const has = (e && (e.workout || e.diet)) || sched || acts.length > 0 || logged;
             return (
               <button
                 key={key}
@@ -407,8 +476,9 @@ export default function Calendar() {
                     {activityType(t).label}
                   </span>
                 ))}
-                {(e?.diet || (sched && e?.workout)) && (
+                {(e?.diet || logged || (sched && e?.workout)) && (
                   <span className="cal-dots">
+                    {logged && <span className="cal-dot lg" title="Sets logged" />}
                     {sched && e?.workout && <span className="cal-dot wk" title="Logged workout plan" />}
                     {e?.diet && <span className="cal-dot dt" title="Meal plan" />}
                   </span>
@@ -424,9 +494,11 @@ export default function Calendar() {
         <p>
           {scheduledDay
             ? "Training day"
-            : activities.length
-              ? "Activity day"
-              : "Rest day — no workout scheduled"}
+            : hasLog
+              ? "Workout logged"
+              : activities.length
+                ? "Activity day"
+                : "Rest day — no workout scheduled"}
         </p>
       </div>
 
@@ -440,6 +512,8 @@ export default function Calendar() {
           onRemove={() => setWorkoutHidden(selected, true)}
         />
       )}
+      {/* What was actually logged that day — viewable straight from the calendar. */}
+      {hasLog && <LoggedWorkoutCard date={selected} dayLog={selectedLog} />}
       {/* The scheduled workout was removed for this day — offer to restore it. */}
       {!scheduledDay && hideWorkout && scheduledRaw && (
         <RemovedWorkoutNote
