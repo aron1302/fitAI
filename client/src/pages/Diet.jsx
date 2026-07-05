@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useApp, dateKey } from "../context/AppContext.jsx";
 import { nutritionTargets, engineLabel } from "../lib/calc.js";
 import SuggestEdit from "../components/SuggestEdit.jsx";
+import MealTracker from "../components/MealTracker.jsx";
 
 export default function Diet() {
   const {
@@ -10,6 +11,7 @@ export default function Diet() {
     setDietPlan: setPlan,
     mealLog,
     toggleMealEaten,
+    eatenMeals,
     genState,
     generateDiet,
   } = useApp();
@@ -18,16 +20,22 @@ export default function Diet() {
   const [draft, setDraft] = useState(null); // non-null while editing
   const t = nutritionTargets(profile);
 
-  // Today's eaten checkmarks, plus running totals of what's been consumed.
+  // Today's eaten checkmarks on plan meals, plus the free-form meals logged via
+  // "Plan As You Go" — together the running totals of what's been consumed.
   const eaten = mealLog[dateKey()] || {};
-  const eatenMeals = plan?.meals?.filter((m) => eaten[m.name]) || [];
-  const eatenCalories = eatenMeals.reduce((sum, m) => sum + (m.calories || 0), 0);
-  const eatenProtein = eatenMeals.reduce((sum, m) => sum + (m.protein_g || 0), 0);
+  const checkedMeals = plan?.meals?.filter((m) => eaten[m.name]) || [];
+  const loggedMeals = eatenMeals[dateKey()] || [];
+  const eatenCalories =
+    checkedMeals.reduce((sum, m) => sum + (m.calories || 0), 0) +
+    loggedMeals.reduce((sum, m) => sum + (m.calories || 0), 0);
+  const eatenProtein =
+    checkedMeals.reduce((sum, m) => sum + (m.protein_g || 0), 0) +
+    loggedMeals.reduce((sum, m) => sum + (m.protein_g || 0), 0);
 
   // "Eaten Today" progress is measured against the plan's own meals (their
   // summed calories/protein) so checking off every meal reads as 100% — AI
   // plans don't always sum exactly to the stated daily target. Fall back to the
-  // target if the meals carry no per-meal numbers.
+  // target if the meals carry no per-meal numbers (or there's no plan at all).
   const planCalories = plan?.meals?.reduce((sum, m) => sum + (m.calories || 0), 0) || 0;
   const planProtein = plan?.meals?.reduce((sum, m) => sum + (m.protein_g || 0), 0) || 0;
   const calorieGoal = planCalories || plan?.daily_calories || t.calories;
@@ -190,12 +198,16 @@ export default function Diet() {
         </div>
       )}
 
-      {plan && !editing && (
+      {(plan || loggedMeals.length > 0) && !editing && (
         <div className="card" style={{ marginBottom: 18 }}>
           <div className="card-title-row">
             <h3>Eaten Today</h3>
             <span className="engine-tag">
-              {eatenMeals.length}/{plan.meals.length} meals
+              {plan ? `${checkedMeals.length}/${plan.meals.length} plan meals` : ""}
+              {plan && loggedMeals.length > 0 ? " + " : ""}
+              {loggedMeals.length > 0
+                ? `${loggedMeals.length} logged meal${loggedMeals.length === 1 ? "" : "s"}`
+                : ""}
             </span>
           </div>
           <div className="row" style={{ justifyContent: "space-between", marginBottom: 8 }}>
@@ -214,6 +226,19 @@ export default function Diet() {
             />
           </div>
         </div>
+      )}
+
+      {/* "Plan as you go" — log what was actually eaten, by text or photo, and
+          get an AI nutrition estimate + rest-of-day guidance. Available with or
+          without a generated plan. */}
+      {!editing && (
+        <MealTracker
+          planEaten={checkedMeals.map((m) => ({
+            name: m.name,
+            calories: m.calories,
+            protein_g: m.protein_g,
+          }))}
+        />
       )}
 
       {view && (

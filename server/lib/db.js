@@ -317,6 +317,7 @@ export const STATE_KEYS = [
   "history",
   "mealLog",
   "workoutLog",
+  "eatenMeals",
   "calendar",
 ];
 const STATE_KEY_SET = new Set(STATE_KEYS);

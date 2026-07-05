@@ -84,6 +84,68 @@ export const DIET_SYSTEM =
   "targets for their goal. Use realistic whole foods, include meal times, and keep protein high. Account for their goal, " +
   "age, weight, and recovery needs. Keep per-meal calories and protein roughly consistent with the daily totals.";
 
+// ---- "Plan as you go" meal analysis ----------------------------------------
+// The user reports a meal they actually ate (free text and/or a photo); the AI
+// estimates its nutrition and advises how to steer the rest of the day.
+
+export const MEAL_ANALYZE_SYSTEM =
+  "You are a meticulous sports nutritionist inside a fitness app. The user reports a meal they ACTUALLY ate, as a short " +
+  "text description and/or a photo. Identify the foods (from the photo too, if attached) and estimate the meal's " +
+  "nutrition using realistic default portion sizes for anything unspecified. Be honest about uncertainty: set " +
+  "confidence to low/medium/high and state your key portion assumptions in one short sentence. " +
+  "For guidance: compare the day so far (this meal plus anything already eaten) against the user's daily targets and " +
+  "give 2-3 specific, actionable sentences on how to proceed with the REST of today — what to prioritise or ease up on " +
+  "at the next meals. Be encouraging and non-judgemental; never shame, never give medical advice.";
+
+export const MEAL_ANALYZE_SHAPE = `Return ONLY a JSON object with exactly this shape (no markdown, no commentary):
+{
+  "meal": {
+    "name": string,
+    "items": [string],
+    "calories": number,
+    "protein_g": number,
+    "carbs_g": number,
+    "fat_g": number,
+    "confidence": "low" | "medium" | "high",
+    "assumptions": string
+  },
+  "guidance": string
+}`;
+
+// Builds the user prompt. All inputs are client-supplied, so numbers are
+// coerced and strings are length-capped before they reach the model.
+export function mealAnalyzeUser(description, profile, targets = {}, eatenToday = []) {
+  const n = (v) => Math.max(0, Math.round(Number(v) || 0));
+  const t = {
+    calories: n(targets.calories),
+    proteinG: n(targets.proteinG),
+    carbsG: n(targets.carbsG),
+    fatG: n(targets.fatG),
+  };
+  const eaten = (Array.isArray(eatenToday) ? eatenToday : []).slice(0, 15).map((m) => ({
+    name: String(m?.name || "meal").slice(0, 80),
+    calories: n(m?.calories),
+    protein_g: n(m?.protein_g),
+  }));
+  const soFar = eaten.reduce(
+    (acc, m) => ({ calories: acc.calories + m.calories, protein: acc.protein + m.protein_g }),
+    { calories: 0, protein: 0 }
+  );
+  return [
+    `CLIENT:\n${profileContext(profile)}`,
+    t.calories
+      ? `DAILY TARGETS: ${t.calories} kcal, ${t.proteinG} g protein, ${t.carbsG} g carbs, ${t.fatG} g fat.`
+      : "DAILY TARGETS: not set — base guidance on the computed targets above.",
+    eaten.length
+      ? `ALREADY EATEN TODAY (~${soFar.calories} kcal, ~${soFar.protein} g protein, before this meal):\n` +
+        eaten.map((m) => `- ${m.name} (~${m.calories} kcal, ${m.protein_g} g protein)`).join("\n")
+      : "Nothing else has been logged today yet.",
+    description
+      ? `THE MEAL TO ANALYSE (user's own words):\n"""${description}"""`
+      : "THE MEAL TO ANALYSE: no text given — identify it from the attached photo.",
+  ].join("\n\n");
+}
+
 // For the "suggest a change" feature: the AI judges whether a user's requested
 // edit is suitable and either applies it or declines with a reason.
 const KIND_ROLE = {

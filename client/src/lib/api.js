@@ -213,6 +213,21 @@ export async function resetPassword(token, password) {
 
 // ---- Persistence: per-user app state ----
 
+// "Plan as you go": send a meal the user actually ate (text and/or a small
+// base64 photo) for AI nutrition analysis. Resolves with the server's result
+// ({ ok, meal, guidance } or { ok:false, reason }); throws on HTTP/network
+// failure with a friendly message.
+export async function analyzeMealRequest(payload) {
+  const r = await fetch("/api/meal-analyze", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify(payload),
+  });
+  const data = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(data?.error || `Analysis failed (${r.status})`);
+  return data;
+}
+
 // Load all server-stored state ({ profile, dietPlan, ... }). Returns null on
 // failure so the caller can fall back to its local cache.
 export async function fetchState() {

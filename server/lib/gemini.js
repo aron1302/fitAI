@@ -14,6 +14,9 @@ import {
   suggestUser,
   CLASSIFY_SYSTEM,
   classifyUser,
+  MEAL_ANALYZE_SYSTEM,
+  MEAL_ANALYZE_SHAPE,
+  mealAnalyzeUser,
 } from "./promptContext.js";
 
 // Each Gemini model has its OWN free-tier daily quota bucket, and those buckets
@@ -48,10 +51,13 @@ export function geminiEnabled() {
 
 // One-shot JSON generation (used for workout & diet plans). Walks the model
 // chain: a quota/availability failure on one model retries on the next.
-async function geminiJSON(systemText, userText) {
+// `user` is a plain text prompt or an array of Gemini content parts (text +
+// inline_data images) for multimodal requests.
+async function geminiJSON(systemText, user) {
+  const parts = typeof user === "string" ? [{ text: user }] : user;
   const body = {
     systemInstruction: { parts: [{ text: systemText }] },
-    contents: [{ role: "user", parts: [{ text: userText }] }],
+    contents: [{ role: "user", parts }],
     generationConfig: {
       responseMimeType: "application/json",
       temperature: 0.7,
@@ -101,6 +107,17 @@ export async function geminiDietPlan(profile, recovery) {
 export async function geminiRecoveryPlan(profile, recovery) {
   const user = `Create today's recovery plan for the following client.\n\n${profileContext(profile, recovery)}\n\n${RECOVERY_SHAPE}`;
   return geminiJSON(RECOVERY_SYSTEM, user);
+}
+
+// Estimate the nutrition of a meal the user actually ate, from a text
+// description and/or an inline photo ({ mimeType, data } base64), plus
+// rest-of-day guidance against their targets.
+export async function geminiAnalyzeMeal({ description, image, profile, targets, eatenToday }) {
+  const parts = [
+    { text: `${mealAnalyzeUser(description, profile, targets, eatenToday)}\n\n${MEAL_ANALYZE_SHAPE}` },
+  ];
+  if (image) parts.push({ inline_data: { mime_type: image.mimeType, data: image.data } });
+  return geminiJSON(MEAL_ANALYZE_SYSTEM, parts);
 }
 
 export async function geminiClassifyEdit(message, hasWorkout, hasDiet, context = "") {

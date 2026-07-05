@@ -133,6 +133,27 @@ export const PLAN_SCHEMAS = {
   recovery: RecoveryPlanSchema,
 };
 
+// Result of the "plan as you go" meal analysis (model -> server -> client).
+// Macro fields are coerced/rounded so a model answering "310.5" still passes.
+const roundedNum = z.coerce.number().finite().transform((v) => Math.round(v));
+export const MealAnalysisSchema = z
+  .object({
+    meal: z
+      .object({
+        name: z.string().min(1),
+        items: z.array(z.string()).default([]),
+        calories: roundedNum,
+        protein_g: roundedNum,
+        carbs_g: roundedNum,
+        fat_g: roundedNum,
+        confidence: z.enum(["low", "medium", "high"]).catch("medium"),
+        assumptions: z.string().optional().default(""),
+      })
+      .passthrough(),
+    guidance: z.string(),
+  })
+  .passthrough();
+
 // Result of an AI-judged plan edit.
 export const SuggestEditResultSchema = z
   .object({

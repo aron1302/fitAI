@@ -29,6 +29,7 @@ const RECOVERY_PLAN_KEY = "fitai.recoveryPlan";
 const HISTORY_KEY = "fitai.history";
 const MEAL_LOG_KEY = "fitai.mealLog";
 const WORKOUT_LOG_KEY = "fitai.workoutLog";
+const EATEN_MEALS_KEY = "fitai.eatenMeals";
 const CALENDAR_KEY = "fitai.calendar";
 
 // Short unique id for a user-added calendar activity.
@@ -91,6 +92,9 @@ export function AppProvider({ children }) {
   // Logged training sets, keyed by date then exercise name; each value is an
   // array of { weight, reps } the user actually performed, for progress tracking.
   const [workoutLog, setWorkoutLog] = useState(() => load(WORKOUT_LOG_KEY, {}));
+  // Free-form meals the user actually ate (from the "plan as you go" analyser),
+  // keyed by date: [{ id, name, calories, protein_g, carbs_g, fat_g, time }].
+  const [eatenMeals, setEatenMeals] = useState(() => load(EATEN_MEALS_KEY, {}));
   // User-added calendar entries, keyed by date: { activities: [{id,type,title}],
   // hideWorkout: bool }. Lets the user add a run/mobility session to any day and
   // remove a scheduled workout for a specific date.
@@ -177,6 +181,7 @@ export function AppProvider({ children }) {
         if (s.history) setHistory(s.history);
         if (s.mealLog) setMealLog(s.mealLog);
         if (s.workoutLog) setWorkoutLog(s.workoutLog);
+        if (s.eatenMeals) setEatenMeals(s.eatenMeals);
         if (s.calendar) setCalendar(s.calendar);
       }
       hydrated.current = true;
@@ -208,7 +213,20 @@ export function AppProvider({ children }) {
   useEffect(() => persist(HISTORY_KEY, "history", history), [history]);
   useEffect(() => persist(MEAL_LOG_KEY, "mealLog", mealLog), [mealLog]);
   useEffect(() => persist(WORKOUT_LOG_KEY, "workoutLog", workoutLog), [workoutLog]);
+  useEffect(() => persist(EATEN_MEALS_KEY, "eatenMeals", eatenMeals), [eatenMeals]);
   useEffect(() => persist(CALENDAR_KEY, "calendar", calendar), [calendar]);
+
+  // Log / remove a free-form meal the user actually ate (from the
+  // "plan as you go" analyser) for a given day (defaults to today).
+  const addEatenMeal = (meal, day = dateKey()) =>
+    setEatenMeals((em) => ({ ...em, [day]: [...(em[day] || []), { id: newId(), ...meal }] }));
+  const removeEatenMeal = (id, day = dateKey()) =>
+    setEatenMeals((em) => {
+      const list = (em[day] || []).filter((m) => m.id !== id);
+      const next = { ...em, [day]: list };
+      if (!list.length) delete next[day];
+      return next;
+    });
 
   // Toggle a meal as eaten/not-eaten for a given day (defaults to today).
   const toggleMealEaten = (mealName, day = dateKey()) =>
@@ -390,6 +408,9 @@ export function AppProvider({ children }) {
     setHistory,
     mealLog,
     toggleMealEaten,
+    eatenMeals,
+    addEatenMeal,
+    removeEatenMeal,
     workoutLog,
     logSet,
     removeSet,

@@ -12,6 +12,8 @@ import {
   suggestUser,
   CLASSIFY_SYSTEM,
   classifyUser,
+  MEAL_ANALYZE_SYSTEM,
+  mealAnalyzeUser,
 } from "./promptContext.js";
 
 const MODEL = "claude-opus-4-8";
@@ -133,6 +135,7 @@ const recoverySchema = {
   ],
 };
 
+// `user` is a plain string or an array of content blocks (text + images).
 async function structured(system, user, schema) {
   const resp = await getClient().messages.create({
     model: MODEL,
@@ -161,6 +164,53 @@ export async function aiDietPlan(profile, recovery) {
 export async function aiRecoveryPlan(profile, recovery) {
   const user = `Create today's recovery plan for the following client.\n\n${profileContext(profile, recovery)}`;
   return structured(RECOVERY_SYSTEM, user, recoverySchema);
+}
+
+const mealAnalysisSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    meal: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        name: { type: "string" },
+        items: { type: "array", items: { type: "string" } },
+        calories: { type: "integer" },
+        protein_g: { type: "integer" },
+        carbs_g: { type: "integer" },
+        fat_g: { type: "integer" },
+        confidence: { type: "string", enum: ["low", "medium", "high"] },
+        assumptions: { type: "string" },
+      },
+      required: [
+        "name",
+        "items",
+        "calories",
+        "protein_g",
+        "carbs_g",
+        "fat_g",
+        "confidence",
+        "assumptions",
+      ],
+    },
+    guidance: { type: "string" },
+  },
+  required: ["meal", "guidance"],
+};
+
+// Estimate the nutrition of a meal the user actually ate, from a text
+// description and/or a photo ({ mimeType, data } base64), plus rest-of-day
+// guidance against their targets.
+export async function aiAnalyzeMeal({ description, image, profile, targets, eatenToday }) {
+  const content = [{ type: "text", text: mealAnalyzeUser(description, profile, targets, eatenToday) }];
+  if (image) {
+    content.push({
+      type: "image",
+      source: { type: "base64", media_type: image.mimeType, data: image.data },
+    });
+  }
+  return structured(MEAL_ANALYZE_SYSTEM, content, mealAnalysisSchema);
 }
 
 export async function aiClassifyEdit(message, hasWorkout, hasDiet, context = "") {

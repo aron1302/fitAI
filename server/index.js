@@ -57,6 +57,7 @@ import {
   aiSuggestEdit,
   aiClassifyEdit,
   aiCoachStream,
+  aiAnalyzeMeal,
 } from "./lib/ai.js";
 import {
   geminiEnabled,
@@ -67,6 +68,7 @@ import {
   geminiSuggestEdit,
   geminiClassifyEdit,
   geminiCoachStream,
+  geminiAnalyzeMeal,
 } from "./lib/gemini.js";
 import {
   ollamaEnabled,
@@ -102,6 +104,7 @@ import {
   PlanKindSchema,
   PLAN_SCHEMAS,
   SuggestEditResultSchema,
+  MealAnalysisSchema,
 } from "./lib/schemas.js";
 import { recentTurns } from "./lib/promptContext.js";
 
@@ -132,6 +135,7 @@ const planners = {
     suggest: geminiSuggestEdit,
     classify: geminiClassifyEdit,
     coach: geminiCoachStream,
+    mealAnalyze: geminiAnalyzeMeal,
   },
   claude: {
     workout: aiWorkoutPlan,
@@ -140,7 +144,10 @@ const planners = {
     suggest: aiSuggestEdit,
     classify: aiClassifyEdit,
     coach: aiCoachStream,
+    mealAnalyze: aiAnalyzeMeal,
   },
+  // Ollama has no mealAnalyze — local text models can't see photos, so the
+  // route reports the feature as unavailable rather than guessing blind.
   ollama: {
     workout: ollamaWorkoutPlan,
     diet: ollamaDietPlan,
@@ -204,6 +211,10 @@ app.use(
   })
 );
 app.use(cookieParser());
+// Meal analysis can carry a small base64 photo, which exceeds the global 1 MB
+// JSON cap — give that one route its own larger parser BEFORE the global one
+// (express.json skips bodies another parser has already consumed).
+app.use("/api/meal-analyze", express.json({ limit: "4mb" }));
 app.use(express.json({ limit: "1mb" }));
 // Issue a CSRF token cookie on every response, and reject state-changing API
 // requests whose header token doesn't match the cookie.
@@ -541,6 +552,61 @@ app.post("/api/suggest-edit", requireAuth, aiLimiter, async (req, res) => {
       approved: false,
       reason: "Sorry, I couldn't process that suggestion — please try rephrasing it.",
       plan,
+    });
+  }
+});
+
+// ---- "Plan as you go": analyse a meal the user actually ate ----------------
+// Accepts a free-text description and/or a small base64 photo, plus optional
+// daily targets and the meals already eaten today for context. Returns the
+// AI's macro estimate and rest-of-day guidance. Needs a vision-capable cloud
+// provider; reports { ok:false, reason } (not an error) when unavailable so
+// the UI can explain gracefully.
+const MEAL_IMAGE_MIME_RE = /^image\/(jpeg|png|webp)$/;
+const BASE64_RE = /^[A-Za-z0-9+/=]+$/;
+
+app.post("/api/meal-analyze", requireAuth, aiLimiter, async (req, res) => {
+  const { description, image, profile, targets, eatenToday } = req.body || {};
+  const desc = typeof description === "string" ? description.trim().slice(0, 1000) : "";
+
+  let img = null;
+  if (image) {
+    const mimeType = String(image.mimeType || "");
+    const data = String(image.data || "");
+    if (!MEAL_IMAGE_MIME_RE.test(mimeType))
+      return res.status(400).json({ error: "photo must be a JPEG, PNG, or WebP image" });
+    // ~4M base64 chars ≈ 3 MB of image — far above what the client's
+    // downscaler produces, so anything bigger is malformed or abusive.
+    if (!data || data.length > 4_000_000 || !BASE64_RE.test(data))
+      return res.status(400).json({ error: "photo data is missing, malformed, or too large" });
+    img = { mimeType, data };
+  }
+  if (!desc && !img)
+    return res.status(400).json({ error: "describe the meal or attach a photo" });
+
+  const prof = check(ProfileSchema, profile || {});
+  if (!prof.ok) return res.status(400).json({ error: `invalid profile — ${prof.error}` });
+
+  const p = await provider();
+  const analyze = p !== "rules" ? planners[p].mealAnalyze : null;
+  if (!analyze) {
+    return res.json({
+      ok: false,
+      reason:
+        "Meal analysis needs a cloud AI engine (Gemini or Claude API key) — it isn't available right now.",
+    });
+  }
+  try {
+    const result = MealAnalysisSchema.parse(
+      await analyze({ description: desc, image: img, profile: prof.data, targets, eatenToday })
+    );
+    return res.json({ ok: true, meal: result.meal, guidance: result.guidance, _engine: p });
+  } catch (err) {
+    console.error(`${p} meal-analyze failed/invalid:`, err.message);
+    return res.json({
+      ok: false,
+      reason:
+        "Sorry, I couldn't read that meal. Try a clearer photo or a short description like \"2 eggs, toast with butter, and a glass of orange juice\".",
     });
   }
 });
