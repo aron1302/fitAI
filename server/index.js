@@ -545,6 +545,25 @@ app.post("/api/suggest-edit", requireAuth, aiLimiter, async (req, res) => {
   }
 });
 
+// Cheap pre-filter for "is this a plan-edit request?" so we don't spend an AI
+// classify call on every coach message. Matches explicit edit verbs aimed at a
+// plan/split/meal/exercise, or a short standalone confirmation ("yes", "do it",
+// "apply that") that follows a coach proposal. Deliberately lenient — a false
+// positive just spends one classify call that returns "none"; a false negative
+// would silently refuse to edit, so err toward matching.
+const EDIT_VERB_RE =
+  /\b(change|swap|switch|replace|make|update|edit|modify|adjust|rework|redo|turn|set|convert|add|remove|drop|increase|decrease|cut|reduce|raise|lower)\b/i;
+const PLAN_NOUN_RE =
+  /\b(plan|split|routine|program|workout|training|exercise|lift|day|diet|meal|nutrition|macro|protein|calorie|carb|fat|food|vegetarian|vegan|dairy|gluten)\b/i;
+const CONFIRM_RE =
+  /^\s*(yes|yep|yeah|yup|sure|ok|okay|k|do it|go ahead|apply( (it|that|this))?|change (it|that|this)|make (it|that|this)( so)?|sounds good|please do|let'?s do it|go for it|confirm(ed)?)\b/i;
+function looksLikePlanEdit(message) {
+  const m = String(message || "").trim();
+  if (!m) return false;
+  if (CONFIRM_RE.test(m)) return true;
+  return EDIT_VERB_RE.test(m) && PLAN_NOUN_RE.test(m);
+}
+
 // Coach action check: decides if the latest message is a request to edit the
 // workout or diet plan. If so, applies the AI edit and returns the result;
 // otherwise tells the client to fall back to normal streaming chat.
@@ -560,7 +579,16 @@ app.post("/api/coach-act", requireAuth, aiLimiter, async (req, res) => {
   const p = await provider();
   if (p === "rules") return res.json({ action: "chat" });
 
+  // Nothing to edit → skip the AI classifier entirely (saves an API call).
+  if (!workoutPlan && !dietPlan) return res.json({ action: "chat" });
+
   const lastUser = [...messages].reverse().find((m) => m.role === "user")?.content || "";
+  // Cheap heuristic gate: only spend an AI classify call when the message
+  // plausibly asks to change a plan (an edit verb, or a short confirmation of
+  // something the coach just proposed). Plain questions — the majority of coach
+  // traffic — go straight to streaming chat, halving AI calls per message.
+  if (!looksLikePlanEdit(lastUser)) return res.json({ action: "chat" });
+
   // The recent transcript lets a bare confirmation ("yes, do it") resolve
   // against the plan the coach just proposed, instead of being seen in isolation.
   const context = recentTurns(messages);

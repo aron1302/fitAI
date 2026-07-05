@@ -16,20 +16,35 @@ import {
   classifyUser,
 } from "./promptContext.js";
 
-// Default model: 2.5-flash — Google removed 2.0-flash from the free tier
-// (free-tier quota is 0 there), so 2.5 is the current no-cost workhorse.
-const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-// Free-tier daily quotas are tiny (observed: 20 requests/day for 2.5-flash),
-// so when the primary model is exhausted (429) or erroring, the same request
-// retries on fallback models — still real AI — before the caller gives up and
-// uses the rule-based engine.
-const MODELS = [...new Set([MODEL, "gemini-2.5-flash-lite"])];
+// Each Gemini model has its OWN free-tier daily quota bucket, and those buckets
+// are small (observed ~20-250 requests/day per model on this key). So instead of
+// relying on one model, every request walks a CHAIN of interchangeable models:
+// when one returns 429 (quota/rate) or errors, the same request retries on the
+// next — multiplying effective free capacity by the number of models before the
+// caller ever falls back to the rule-based engine. Ordered high-quota /
+// low-latency first (flash-lite class), then more capable, then older buckets as
+// extra headroom. Override with GEMINI_MODELS (comma-separated) or GEMINI_MODEL.
+const DEFAULT_MODELS = [
+  "gemini-3.1-flash-lite",
+  "gemini-3.5-flash",
+  "gemini-3-flash-preview",
+  "gemini-2.5-flash-lite",
+  "gemini-2.5-flash",
+];
+const MODELS = (
+  process.env.GEMINI_MODELS
+    ? process.env.GEMINI_MODELS.split(",").map((s) => s.trim()).filter(Boolean)
+    : process.env.GEMINI_MODEL
+      ? [process.env.GEMINI_MODEL]
+      : DEFAULT_MODELS
+).filter((v, i, a) => a.indexOf(v) === i);
+// Label for the /api/status badge: the first model in the chain.
+export const geminiModel = MODELS[0];
 const BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 export function geminiEnabled() {
   return Boolean(process.env.GEMINI_API_KEY);
 }
-export const geminiModel = MODEL;
 
 // One-shot JSON generation (used for workout & diet plans). Walks the model
 // chain: a quota/availability failure on one model retries on the next.
