@@ -14,7 +14,8 @@
  * @property {number} [heightCm] - canonical height; ft/in entry converts to cm
  * @property {"cm"|"ft"} [heightUnit] - display/entry unit preference (default "cm")
  * @property {number} [weightKg]
- * @property {"weight_loss"|"muscle_gain"|"recomp"|"maintain"|"endurance"} [goal]
+ * @property {"weight_loss"|"muscle_gain"|"recomp"|"maintain"|"endurance"|"hybrid"|"other"} [goal]
+ * @property {string} [goalCustom] - the user's own goal description when goal is "other"
  * @property {string} [activityLevel]
  * @property {number} [daysPerWeek]
  * @property {string} [experience]

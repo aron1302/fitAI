@@ -5,11 +5,17 @@ import { nutritionTargets, tdee, readinessBand } from "./targets.js";
 
 export function profileContext(profile, recovery) {
   const t = nutritionTargets(profile);
+  // "other" carries the user's own goal description — give the model those
+  // exact words so plans are tailored to them, not to a generic bucket.
+  const goal =
+    profile.goal === "other" && profile.goalCustom?.trim()
+      ? `${String(profile.goalCustom).trim().slice(0, 200)} (user-described goal — tailor the plan to it)`
+      : profile.goal;
   const lines = [
     `Name: ${profile.name || "unknown"}`,
     `Age: ${profile.age}, Sex: ${profile.sex}`,
     `Height: ${profile.heightCm} cm, Weight: ${profile.weightKg} kg`,
-    `Primary goal: ${profile.goal}`,
+    `Primary goal: ${goal}`,
     `Activity level: ${profile.activityLevel}`,
     `Training days available per week: ${profile.daysPerWeek}`,
     `Experience: ${profile.experience || "intermediate"}`,

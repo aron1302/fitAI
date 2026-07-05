@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useApp, dateKey } from "../context/AppContext.jsx";
-import { readinessBand, engineLabel, effectiveWorkoutForDate } from "../lib/calc.js";
+import { readinessBand, engineLabel, effectiveWorkoutForDate, goalLabel } from "../lib/calc.js";
 import SuggestEdit from "../components/SuggestEdit.jsx";
 import ExerciseDemo from "../components/ExerciseDemo.jsx";
 
@@ -258,8 +258,7 @@ export default function Workout() {
         <div className="row" style={{ justifyContent: "space-between" }}>
           <div>
             <div style={{ fontWeight: 700, fontSize: 16 }}>
-              {profile.goal.replace("_", " ")} · {profile.daysPerWeek} days/week ·{" "}
-              {profile.experience}
+              {goalLabel(profile)} · {profile.daysPerWeek} days/week · {profile.experience}
             </div>
             <div className="muted" style={{ fontSize: 13.5, marginTop: 4 }}>
               {profile.impairments?.length

@@ -182,6 +182,15 @@ export default function Profile() {
                 </option>
               ))}
             </select>
+            {profile.goal === "other" && (
+              <input
+                style={{ marginTop: 8 }}
+                value={profile.goalCustom || ""}
+                maxLength={200}
+                onChange={(e) => updateProfile({ goalCustom: e.target.value })}
+                placeholder="Describe your goal — e.g. get fit for a Himalayan trek in October"
+              />
+            )}
           </div>
           <div className="field">
             <label>Activity level</label>

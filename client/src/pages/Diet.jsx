@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useApp, dateKey } from "../context/AppContext.jsx";
-import { nutritionTargets, engineLabel } from "../lib/calc.js";
+import { nutritionTargets, engineLabel, goalLabel } from "../lib/calc.js";
 import SuggestEdit from "../components/SuggestEdit.jsx";
 import MealTracker from "../components/MealTracker.jsx";
 
@@ -140,8 +140,8 @@ export default function Diet() {
       <div className="card" style={{ marginBottom: 18 }}>
         <div className="row" style={{ justifyContent: "space-between" }}>
           <div className="muted" style={{ fontSize: 13.5 }}>
-            Target set for <b style={{ color: "var(--text)" }}>{profile.goal.replace("_", " ")}</b>{" "}
-            · {profile.weightKg} kg · {profile.age} yrs
+            Target set for <b style={{ color: "var(--text)" }}>{goalLabel(profile)}</b> ·{" "}
+            {profile.weightKg} kg · {profile.age} yrs
           </div>
           <div className="row" style={{ gap: 10 }}>
             {plan && !editing && (

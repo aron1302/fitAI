@@ -231,7 +231,17 @@ export const GOALS = [
   { value: "maintain", label: "Maintain / General Health" },
   { value: "endurance", label: "Endurance" },
   { value: "hybrid", label: "Hybrid Training" },
+  { value: "other", label: "Other (write your own)" },
 ];
+
+// Human-readable goal for display: the user's own words for "other", else the
+// option's label. Targets math treats unknown goals as maintenance, so a
+// custom goal is always safe — the AI planners get the custom text via the
+// prompt context and tailor plans to it there.
+export function goalLabel(profile) {
+  if (profile?.goal === "other" && profile?.goalCustom?.trim()) return profile.goalCustom.trim();
+  return GOALS.find((g) => g.value === profile?.goal)?.label || "General Health";
+}
 
 export const ACTIVITY_LEVELS = [
   { value: "sedentary", label: "Sedentary (desk job, little exercise)" },

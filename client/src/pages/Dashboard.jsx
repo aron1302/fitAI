@@ -12,6 +12,7 @@ import {
   hrvBand,
   effectiveWorkoutForDate,
   activityType,
+  goalLabel,
 } from "../lib/calc.js";
 
 // The dashboard's "Upcoming" strip: the next 7 days at a glance, each tile
@@ -306,7 +307,12 @@ export default function Dashboard() {
         <div className="card">
           <div className="card-title-row">
             <h3>Nutrition Targets</h3>
-            <span className="engine-tag">{profile.goal}</span>
+            <span className="engine-tag" title={goalLabel(profile)}>
+              {/* Custom goals can be long — keep the little tag readable. */}
+              {goalLabel(profile).length > 30
+                ? `${goalLabel(profile).slice(0, 30)}…`
+                : goalLabel(profile)}
+            </span>
           </div>
           <div className="stat" style={{ marginBottom: 16 }}>
             <span className="label">Daily calorie target</span>
