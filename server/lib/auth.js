@@ -176,22 +176,29 @@ export async function login(req, res) {
   }
 
   const user = getUserByEmail(key);
-  // Always run a compare to avoid leaking whether the email exists (timing).
-  const ok = user
-    ? await bcrypt.compare(password, user.password_hash)
-    : await bcrypt.compare(password, "$2a$12$invalidinvalidinvalidinvalidinvalidinvalidinv");
+  // Deliberate UX/enumeration trade-off: an unregistered email gets a distinct
+  // response so the client can steer the visitor to signup instead of a dead
+  // end. Probing is still throttled by authLimiter on the route.
+  if (!user) {
+    logAudit({ event: "login_unknown_email", ipHash, detail: hashIp(key) });
+    return res.status(401).json({
+      error: "no account found with this email",
+      code: "unknown_email",
+    });
+  }
 
-  if (!user || !ok) {
+  const ok = await bcrypt.compare(password, user.password_hash);
+  if (!ok) {
     const lockedUntil = registerFailedLogin(lkey, config.maxLoginAttempts, config.lockoutMs);
     logAudit({
       event: lockedUntil ? "login_lockout_triggered" : "login_fail",
-      userId: user?.id ?? null,
+      userId: user.id,
       ipHash,
       // Keyed hash of the attempted email (same HMAC as IPs) so repeat attempts
       // stay correlatable in the audit trail without storing the address itself.
       detail: hashIp(key),
     });
-    return res.status(401).json({ error: "invalid email or password" });
+    return res.status(401).json({ error: "incorrect password" });
   }
 
   // Password is correct. If 2FA is on, don't start a session yet — return a

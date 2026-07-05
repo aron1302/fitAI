@@ -11,6 +11,7 @@ export default function Auth() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
+  const [unknownEmail, setUnknownEmail] = useState(false); // login failed because no account exists
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
   const [notice, setNotice] = useState(null); // info message (e.g. signup "check your email")
@@ -51,6 +52,7 @@ export default function Auth() {
   const goMode = (m) => {
     setMode(m);
     setError(null);
+    setUnknownEmail(false);
     setSent(false);
     setNotice(null);
     setPassword("");
@@ -64,6 +66,7 @@ export default function Auth() {
   async function submit(e) {
     e.preventDefault();
     setError(null);
+    setUnknownEmail(false);
     setBusy(true);
     try {
       if (twoFA) {
@@ -79,7 +82,12 @@ export default function Auth() {
         if (data?.twoFactorRequired) setTwoFA(data.challenge);
       }
     } catch (err) {
-      setError(friendlyError(err));
+      if (err?.code === "unknown_email") {
+        setUnknownEmail(true);
+        setError("No account found with this email.");
+      } else {
+        setError(friendlyError(err));
+      }
     } finally {
       setBusy(false);
     }
@@ -202,7 +210,19 @@ export default function Auth() {
               </button>
             )}
 
-            {error && <div className="auth-error">{error}</div>}
+            {error && (
+              <div className="auth-error">
+                {error}
+                {unknownEmail && (
+                  <>
+                    {" "}
+                    <button type="button" className="auth-link" onClick={() => goMode("signup")}>
+                      Create an account
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
 
             <button className="auth-submit" type="submit" disabled={busy}>
               {busy ? "Please wait…" : isForgot ? "Send reset link" : isSignup ? "Sign up" : "Log in"}

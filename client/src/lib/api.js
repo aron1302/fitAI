@@ -53,7 +53,8 @@ export async function signupRequest(email, password) {
 }
 
 // Login returns the full response: { user } on success, or { twoFactorRequired,
-// challenge } when a second factor is needed.
+// challenge } when a second factor is needed. Failures carry the server's
+// machine-readable `code` (e.g. "unknown_email") so the UI can react to it.
 export async function loginRequest(email, password) {
   const r = await fetch("/api/auth/login", {
     method: "POST",
@@ -61,7 +62,11 @@ export async function loginRequest(email, password) {
     body: JSON.stringify({ email, password }),
   });
   const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data.error || "Request failed");
+  if (!r.ok) {
+    const err = new Error(data.error || "Request failed");
+    err.code = data.code;
+    throw err;
+  }
   return data;
 }
 
