@@ -72,3 +72,59 @@ describe("workoutForDate", () => {
     expect(workoutForDate(null, new Date())).toBe(null);
   });
 });
+
+describe("weeklyExtras (cardio / flexibility / recovery scheduling)", () => {
+  const plan3 = { days: [{ day: "A" }, { day: "B" }, { day: "C" }] };
+  const plan4 = { days: [{ day: "A" }, { day: "B" }, { day: "C" }, { day: "D" }] };
+  const base = { age: 30, goal: "recomp", daysPerWeek: 3 };
+
+  it("fills rest days: cardio first, recovery on the week's last free day", async () => {
+    const { weeklyExtras } = await import("../client/src/lib/calc.js");
+    // 3-day plan → Mon/Wed/Fri training; rest = Tue/Thu/Sat/Sun.
+    const x = weeklyExtras(base, plan3);
+    expect(x[2].type).toBe("cardio"); // Tuesday
+    expect(x[4].type).toBe("cardio"); // Thursday
+    expect(x[6].type).toBe("flexibility"); // Saturday
+    expect(x[0].type).toBe("recovery"); // Sunday
+    expect(x[1]).toBeUndefined(); // training days carry no extra
+  });
+
+  it("gives endurance goals more cardio and muscle gain less", async () => {
+    const { weeklyExtras } = await import("../client/src/lib/calc.js");
+    const endu = weeklyExtras({ ...base, goal: "endurance" }, plan3);
+    expect([2, 4, 6].every((wd) => endu[wd].type === "cardio")).toBe(true);
+    expect(endu[2].duration_min).toBe(45);
+    const gain = weeklyExtras({ ...base, goal: "muscle_gain" }, plan3);
+    expect([2, 4, 6, 0].filter((wd) => gain[wd]?.type === "cardio")).toHaveLength(1);
+    expect(gain[2].duration_min).toBe(20);
+  });
+
+  it("adapts to age: shorter low-impact cardio and more mobility for 50+", async () => {
+    const { weeklyExtras } = await import("../client/src/lib/calc.js");
+    const x = weeklyExtras({ ...base, age: 58 }, plan3);
+    expect(x[2].duration_min).toBe(30);
+    expect(x[2].detail).toMatch(/low-impact/i);
+    expect(x[6].title).toMatch(/balance/i);
+  });
+
+  it("rides flexibility along the last lift when no free day remains", async () => {
+    const { weeklyExtras } = await import("../client/src/lib/calc.js");
+    // 4-day plan → Mon/Tue/Thu/Fri training; rest = Wed/Sat/Sun; two cardio
+    // days + recovery consume all three, so flexibility lands on Friday.
+    const x = weeklyExtras(base, plan4);
+    expect(x[3].type).toBe("cardio");
+    expect(x[6].type).toBe("cardio");
+    expect(x[0].type).toBe("recovery");
+    expect(x[5].type).toBe("flexibility");
+    expect(x[5].withWorkout).toBe(true);
+  });
+
+  it("keeps the single free day as recovery on a 6-day split", async () => {
+    const { weeklyExtras } = await import("../client/src/lib/calc.js");
+    const plan6 = { days: Array.from({ length: 6 }, (_, i) => ({ day: `D${i}` })) };
+    const x = weeklyExtras({ ...base, daysPerWeek: 6 }, plan6);
+    expect(x[0].type).toBe("recovery"); // Sunday
+    // No cardio squeezed in — recovery keeps its day.
+    expect(Object.values(x).filter((e) => e.type === "cardio")).toHaveLength(0);
+  });
+});

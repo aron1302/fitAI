@@ -198,6 +198,114 @@ export function effectiveWorkoutForDate(plan, date, trainingDays, calEntry) {
   return Number.isInteger(idx) ? plan?.days?.[idx] || null : null;
 }
 
+// ---- Weekly cardio / flexibility / recovery scheduling ---------------------
+// Fills the gaps around strength days so the week reads as a complete
+// programme: cardio volume follows the goal (mirroring the Cardio page),
+// flexibility gets its own day — or rides along after the week's last lift
+// when every day is taken — and the final free day stays pure recovery.
+// Durations and wording adapt to age (gentler and low-impact for 50+).
+// Deterministic per profile, so the calendar doesn't reshuffle day to day.
+// Returns { [weekday 0-6]: { type, title, detail, duration_min, withWorkout? } }.
+export function weeklyExtras(profile, plan, trainingDays) {
+  const goal = profile?.goal || "maintain";
+  const senior = (profile?.age || 30) >= 50;
+
+  // The weekdays strength training occupies — the same mapping the calendar
+  // uses; without a plan, the user's chosen/default training days still hold.
+  const strengthSet = plan
+    ? new Set(Object.keys(workoutSchedule(plan, trainingDays)).map(Number))
+    : new Set(
+        Array.isArray(trainingDays) && trainingDays.length
+          ? trainingDays
+          : defaultTrainingDays(profile?.daysPerWeek)
+      );
+
+  const MON_FIRST = [1, 2, 3, 4, 5, 6, 0];
+  const rest = MON_FIRST.filter((wd) => !strengthSet.has(wd));
+  const extras = {};
+
+  // The week's last free day (typically Sunday) stays untouched recovery.
+  if (rest.length) {
+    extras[rest[rest.length - 1]] = {
+      type: "recovery",
+      title: "Rest & recovery",
+      duration_min: 0,
+      detail: senior
+        ? "Full rest day: prioritise sleep, hydration, and a gentle stroll. Recovery is where adaptation happens — it matters even more past 50."
+        : "Full rest day: prioritise sleep and hydration; an easy walk is fine. This is where your body actually adapts and grows.",
+    };
+  }
+
+  // Cardio volume by goal, capped so recovery keeps its day.
+  const cardioTarget = goal === "endurance" ? 3 : goal === "muscle_gain" ? 1 : 2;
+  rest.slice(0, Math.min(cardioTarget, Math.max(0, rest.length - 1))).forEach((wd) => {
+    extras[wd] = {
+      type: "cardio",
+      title:
+        goal === "endurance"
+          ? "Zone 2 endurance cardio"
+          : goal === "muscle_gain"
+            ? "Easy Zone 2 cardio"
+            : "Zone 2 cardio",
+      duration_min: senior ? 30 : goal === "endurance" ? 45 : goal === "muscle_gain" ? 20 : 35,
+      detail: senior
+        ? "Low-impact steady cardio — brisk walk, cycle, or swim — at a conversational pace."
+        : goal === "muscle_gain"
+          ? "Short and easy — supports heart health and recovery without eating into strength gains."
+          : "Steady, conversational pace — the foundation of endurance and fat metabolism.",
+    };
+  });
+
+  // Flexibility: its own day when one is free; otherwise 10-15 min straight
+  // after the week's last strength session, while muscles are warm. Seniors
+  // get it on every remaining free day — mobility and balance work matter
+  // most with age.
+  const flexExtra = {
+    type: "flexibility",
+    title: senior ? "Mobility, stretching & balance" : "Stretching & mobility",
+    duration_min: senior ? 25 : 20,
+    detail: senior
+      ? "Gentle full-body mobility with balance holds — key for joint health and fall prevention."
+      : "Full-body stretch & mobility session — hips, spine, shoulders, hamstrings.",
+  };
+  const free = rest.filter((wd) => !extras[wd]);
+  if (free.length) {
+    (senior ? free : free.slice(0, 1)).forEach((wd) => {
+      extras[wd] = { ...flexExtra };
+    });
+  } else {
+    const lastStrength = [...MON_FIRST].reverse().find((wd) => strengthSet.has(wd));
+    if (lastStrength !== undefined) {
+      extras[lastStrength] = {
+        ...flexExtra,
+        withWorkout: true,
+        duration_min: 15,
+        detail: "10–15 minutes of stretching straight after training, while muscles are warm.",
+      };
+    }
+  }
+  return extras;
+}
+
+// Display metadata for the scheduled extras (icon, colour, destination page).
+export const EXTRA_META = {
+  cardio: { label: "Cardio", icon: "🏃", color: "var(--accent-2)", to: "/cardio", cta: "Open Cardio" },
+  flexibility: {
+    label: "Flexibility",
+    icon: "🧘",
+    color: "var(--accent-3)",
+    to: "/flexibility",
+    cta: "Open Flexibility",
+  },
+  recovery: {
+    label: "Recovery",
+    icon: "😴",
+    color: "var(--muted)",
+    to: "/workout",
+    cta: "View recovery plan",
+  },
+};
+
 // User-addable activity types (a run, mobility work, etc.) with a colour used
 // for calendar dots and activity pills. Shared by the Calendar and Dashboard.
 export const ACTIVITY_TYPES = [

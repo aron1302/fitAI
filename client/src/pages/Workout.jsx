@@ -1,7 +1,14 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useApp, dateKey } from "../context/AppContext.jsx";
-import { readinessBand, engineLabel, effectiveWorkoutForDate, goalLabel } from "../lib/calc.js";
+import {
+  readinessBand,
+  engineLabel,
+  effectiveWorkoutForDate,
+  goalLabel,
+  weeklyExtras,
+  EXTRA_META,
+} from "../lib/calc.js";
 import SuggestEdit from "../components/SuggestEdit.jsx";
 import ExerciseDemo from "../components/ExerciseDemo.jsx";
 
@@ -188,6 +195,9 @@ export default function Workout() {
     calendar[dateKey()]
   );
   const todayIdx = todayWorkout && plan ? plan.days.indexOf(todayWorkout) : -1;
+  // The weekly schedule's cardio/flexibility/recovery session for today, so a
+  // rest day still says what's on the programme.
+  const todayExtra = weeklyExtras(profile, plan, profile?.trainingDays)[new Date().getDay()];
 
   // ---- editing helpers (operate on a draft copy) ----
   const startEdit = () => {
@@ -388,13 +398,27 @@ export default function Workout() {
             </>
           ) : (
             <div className="card empty">
-              <div style={{ fontSize: 40, marginBottom: 10 }}>😴</div>
+              <div style={{ fontSize: 40, marginBottom: 10 }}>
+                {todayExtra ? EXTRA_META[todayExtra.type].icon : "😴"}
+              </div>
               <p>There aren&apos;t any workouts scheduled for today — it&apos;s a rest day.</p>
+              {todayExtra && todayExtra.type !== "recovery" && (
+                <p className="muted" style={{ fontSize: 14, marginTop: 6 }}>
+                  On the programme instead: <b style={{ color: "var(--text)" }}>{todayExtra.title}</b>
+                  {todayExtra.duration_min ? ` · ${todayExtra.duration_min} min` : ""}
+                  {readiness < 40 ? " — readiness is low, keep it very easy today." : ""}
+                </p>
+              )}
               <div className="row" style={{ justifyContent: "center", gap: 10, marginTop: 12 }}>
+                {todayExtra && todayExtra.type !== "recovery" && (
+                  <Link className="btn" to={EXTRA_META[todayExtra.type].to}>
+                    {EXTRA_META[todayExtra.type].cta} →
+                  </Link>
+                )}
                 <button className="btn ghost" onClick={() => setWeek(true)}>
                   View full week
                 </button>
-                <Link className="btn" to="/calendar">
+                <Link className={todayExtra && todayExtra.type !== "recovery" ? "btn ghost" : "btn"} to="/calendar">
                   Add one from the calendar
                 </Link>
               </div>

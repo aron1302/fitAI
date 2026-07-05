@@ -7,6 +7,8 @@ import {
   effectiveWorkoutForDate,
   ACTIVITY_TYPES,
   activityType,
+  weeklyExtras,
+  EXTRA_META,
 } from "../lib/calc.js";
 import ExerciseHistory from "../components/ExerciseHistory.jsx";
 
@@ -343,6 +345,40 @@ function AddWorkoutCard({ plan, onAdd }) {
   );
 }
 
+// A cardio / flexibility / recovery session the weekly schedule places on this
+// day (see weeklyExtras in calc.js). For today, a low readiness score adds a
+// take-it-easy warning on anything that isn't already a recovery day.
+function SuggestedSessionCard({ extra, readiness, isToday }) {
+  const meta = EXTRA_META[extra.type];
+  return (
+    <div className="card" style={{ marginBottom: 18 }}>
+      <div className="card-title-row">
+        <h3>
+          {meta.icon} {extra.title}
+        </h3>
+        <span className="pill moderate" style={{ color: meta.color }}>
+          Scheduled{extra.duration_min ? ` · ${extra.duration_min} min` : ""}
+        </span>
+      </div>
+      <p className="muted" style={{ fontSize: 14, lineHeight: 1.6, margin: 0 }}>
+        {extra.detail}
+        {extra.withWorkout ? " Planned alongside today's strength session." : ""}
+      </p>
+      {isToday && readiness < 40 && extra.type !== "recovery" && (
+        <div className="callout warn" style={{ marginTop: 12 }}>
+          ⚠ Readiness is {readiness}/100 today — keep it very easy (Zone 1 / gentle stretching) or
+          take full rest instead.
+        </div>
+      )}
+      <div className="row" style={{ marginTop: 14 }}>
+        <Link className="btn ghost sm" to={meta.to}>
+          {meta.cta} →
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 // Shown when the user has removed the auto-scheduled workout for a day.
 function RemovedWorkoutNote({ day, onRestore }) {
   return (
@@ -368,6 +404,7 @@ export default function Calendar() {
     history,
     workoutPlan,
     profile,
+    readiness,
     calendar,
     workoutLog,
     addActivity,
@@ -376,6 +413,9 @@ export default function Calendar() {
     setWorkoutAdded,
   } = useApp();
   const trainingDays = profile?.trainingDays;
+  // Cardio / flexibility / recovery sessions scheduled around the strength
+  // days, from the user's goal, age, and training-day spread.
+  const extras = weeklyExtras(profile, workoutPlan, trainingDays);
   const today = new Date();
   const todayKey = dateKey(today);
   // A "?date=YYYY-MM-DD" query (e.g. from the dashboard's Upcoming strip)
@@ -439,6 +479,16 @@ export default function Calendar() {
   // Sets actually recorded on the selected date, shown as their own card.
   const selectedLog = workoutLog[selected];
   const hasLog = selectedLog && Object.keys(selectedLog).length > 0;
+  // The weekly schedule's session for this weekday (cardio/flexibility/
+  // recovery) — shown for today and future days the user hasn't already
+  // filled with their own workout or activities.
+  const extra = extras[selectedDate.getDay()];
+  const showExtra =
+    !!extra &&
+    selected >= todayKey &&
+    activities.length === 0 &&
+    !addedDay &&
+    (extra.withWorkout || !scheduledDay);
 
   return (
     <>
@@ -523,6 +573,21 @@ export default function Calendar() {
                     {activityType(t).label}
                   </span>
                 ))}
+                {/* The weekly schedule's cardio/flexibility/recovery session,
+                    for today & future days the user hasn't filled themselves. */}
+                {(() => {
+                  const ex = extras[dObj.getDay()];
+                  if (!ex || isPast || acts.length > 0 || (!ex.withWorkout && sched)) return null;
+                  return (
+                    <span
+                      className="cal-activity"
+                      style={{ color: EXTRA_META[ex.type].color }}
+                      title={ex.title}
+                    >
+                      {EXTRA_META[ex.type].label}
+                    </span>
+                  );
+                })()}
                 {(e?.diet || logged || (sched && e?.workout)) && (
                   <span className="cal-dots">
                     {logged && <span className="cal-dot lg" title="Sets logged" />}
@@ -545,7 +610,9 @@ export default function Calendar() {
               ? "Workout logged"
               : activities.length
                 ? "Activity day"
-                : "Rest day — no workout scheduled"}
+                : showExtra && extra.type !== "recovery"
+                  ? `${EXTRA_META[extra.type].label} day`
+                  : "Rest day — no workout scheduled"}
         </p>
       </div>
 
@@ -570,6 +637,10 @@ export default function Calendar() {
           canLog={selected <= todayKey}
           onRemove={() => setWorkoutAdded(selected, null)}
         />
+      )}
+      {/* The weekly schedule's cardio / flexibility / recovery session. */}
+      {showExtra && (
+        <SuggestedSessionCard extra={extra} readiness={readiness} isToday={selected === todayKey} />
       )}
       {/* Rest day with a plan available — offer to place a session here. */}
       {!scheduledRaw && !addedDay && workoutPlan?.days?.length > 0 && (

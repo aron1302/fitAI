@@ -13,23 +13,33 @@ import {
   effectiveWorkoutForDate,
   activityType,
   goalLabel,
+  weeklyExtras,
+  EXTRA_META,
 } from "../lib/calc.js";
 
 // The dashboard's "Upcoming" strip: the next 7 days at a glance, each tile
 // linking to that day on the calendar. Shows the scheduled workout (after any
-// per-day calendar overrides) plus user-added activities; days with neither
-// read as rest/recovery.
-function UpcomingStrip({ workoutPlan, trainingDays, calendar }) {
+// per-day calendar overrides), user-added activities, and the weekly
+// schedule's cardio/flexibility/recovery sessions; empty days read as rest.
+function UpcomingStrip({ workoutPlan, trainingDays, calendar, profile }) {
+  const extras = weeklyExtras(profile, workoutPlan, trainingDays);
   const days = [];
   for (let i = 0; i < 7; i++) {
     const date = new Date();
     date.setDate(date.getDate() + i);
     const key = dateKey(date);
+    const workout = effectiveWorkoutForDate(workoutPlan, date, trainingDays, calendar[key]);
+    const activities = calendar[key]?.activities || [];
+    const ex = extras[date.getDay()];
     days.push({
       key,
       date,
-      workout: effectiveWorkoutForDate(workoutPlan, date, trainingDays, calendar[key]),
-      activities: calendar[key]?.activities || [],
+      workout,
+      activities,
+      // Show the scheduled extra unless the user filled the day themselves
+      // (their own activities win, and a workout hides everything except a
+      // rides-along flexibility session).
+      extra: ex && activities.length === 0 && (ex.withWorkout || !workout) ? ex : null,
     });
   }
   const dow = (date, i) =>
@@ -48,7 +58,7 @@ function UpcomingStrip({ workoutPlan, trainingDays, calendar }) {
         </Link>
       </div>
       <div className="up-strip">
-        {days.map(({ key, date, workout, activities }, i) => (
+        {days.map(({ key, date, workout, activities, extra }, i) => (
           <Link key={key} to={`/calendar?date=${key}`} className={`up-day${i === 0 ? " today" : ""}`}>
             <span className="up-dow">{dow(date, i)}</span>
             <span className="up-date">
@@ -70,7 +80,17 @@ function UpcomingStrip({ workoutPlan, trainingDays, calendar }) {
                 {activityType(a.type).label}
               </span>
             ))}
-            {!workout && activities.length === 0 && (
+            {extra && extra.type !== "recovery" && (
+              <span
+                className="up-item"
+                style={{ color: EXTRA_META[extra.type].color }}
+                title={extra.title}
+              >
+                {EXTRA_META[extra.type].label}
+                {extra.duration_min ? ` · ${extra.duration_min} min` : ""}
+              </span>
+            )}
+            {!workout && activities.length === 0 && (!extra || extra.type === "recovery") && (
               <span className="up-rest">Rest &amp; recovery</span>
             )}
           </Link>
@@ -207,6 +227,7 @@ export default function Dashboard() {
         workoutPlan={workoutPlan}
         trainingDays={profile?.trainingDays}
         calendar={calendar}
+        profile={profile}
       />
 
       <div className="grid cols-4">
