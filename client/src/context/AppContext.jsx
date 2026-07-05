@@ -158,6 +158,9 @@ export function AppProvider({ children }) {
   // cache / offline fallback. `hydrated` gates server writes so the initial
   // cached values don't overwrite freshly-loaded server data on boot.
   const hydrated = useRef(false);
+  // Same fact as state, for consumers that must wait for the server's answer
+  // (e.g. first-login onboarding shouldn't fire off the default profile).
+  const [stateLoaded, setStateLoaded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -176,6 +179,7 @@ export function AppProvider({ children }) {
         if (s.calendar) setCalendar(s.calendar);
       }
       hydrated.current = true;
+      setStateLoaded(true);
     });
     return () => {
       cancelled = true;
@@ -354,6 +358,7 @@ export function AppProvider({ children }) {
   const value = {
     profile,
     setProfile,
+    stateLoaded,
     updateProfile: (patch) => setProfile((p) => ({ ...p, ...patch })),
     recovery,
     setRecovery,

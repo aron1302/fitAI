@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
-import { NavLink, Link, Outlet, useLocation } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { NavLink, Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { getStatus } from "./lib/api.js";
 import { useAuth } from "./context/AuthContext.jsx";
+import { useApp } from "./context/AppContext.jsx";
 import { NAV_ICONS } from "./components/NavIcons.jsx";
 import VerifyBanner from "./components/VerifyBanner.jsx";
 
@@ -83,11 +84,23 @@ export default function App() {
   const [status, setStatus] = useState({ ai: null });
   const [moreOpen, setMoreOpen] = useState(false);
   const { user, logout } = useAuth();
+  const { profile, stateLoaded } = useApp();
   const location = useLocation();
+  const navigate = useNavigate();
 
   useEffect(() => {
     getStatus().then(setStatus);
   }, []);
+
+  // First login: once the server confirms this account has never completed its
+  // profile, take the user to the Profile page to fill in their details. Fires
+  // at most once per session so they can still navigate away freely.
+  const sentToSetup = useRef(false);
+  useEffect(() => {
+    if (!stateLoaded || profile.onboarded || sentToSetup.current) return;
+    sentToSetup.current = true;
+    if (location.pathname !== "/profile") navigate("/profile");
+  }, [stateLoaded, profile.onboarded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Scroll to top + close the mobile "More" sheet on every route change.
   useEffect(() => {

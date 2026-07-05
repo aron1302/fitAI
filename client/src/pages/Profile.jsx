@@ -59,9 +59,17 @@ export default function Profile() {
   return (
     <>
       <div className="page-head">
-        <h1>Profile & Recovery</h1>
+        <h1>{profile.onboarded ? "Profile & Recovery" : "Let's set up your profile"}</h1>
         <p>The AI uses everything here to personalise your plans. Changes save automatically.</p>
       </div>
+
+      {!profile.onboarded && (
+        <div className="banner">
+          👋 <b>Welcome to FitAI!</b> Tell us about yourself — your name, age, body stats and
+          goals — then hit <b>Save profile</b> at the bottom. The AI uses these details to build
+          your workout and diet plans.
+        </div>
+      )}
 
       <div className="grid cols-2">
         <div className="card">
