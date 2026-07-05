@@ -10,7 +10,7 @@ import {
   vo2max,
   vo2maxRating,
   hrvBand,
-  workoutForDate,
+  effectiveWorkoutForDate,
 } from "../lib/calc.js";
 
 function Ring({ value, max = 100, size = 132, label, sub, color = "var(--accent)" }) {
@@ -88,7 +88,8 @@ const BAND_COLOR = {
 };
 
 export default function Dashboard() {
-  const { profile, recovery, readiness, log, workoutPlan, activity, workoutLog } = useApp();
+  const { profile, recovery, readiness, log, workoutPlan, activity, workoutLog, calendar } =
+    useApp();
   const act = todayActivity(profile, log, activity);
   // Exercise whose cross-session history modal is open (null = closed), plus
   // the set of names that have any logged sets at all — only those get a
@@ -99,9 +100,15 @@ export default function Dashboard() {
   const sourceLabel = act.source
     ? `From ${act.source === "fitbit" ? "Fitbit" : act.source}`
     : "Estimated — connect a tracker";
-  // Today's scheduled training day (if any) and its index in the plan, so we can
+  // Today's training day (if any) — including calendar overrides (a session the
+  // user added to or removed from today) — and its index in the plan, so we can
   // deep-link straight to its logging page.
-  const todayWorkout = workoutForDate(workoutPlan, new Date(), profile?.trainingDays);
+  const todayWorkout = effectiveWorkoutForDate(
+    workoutPlan,
+    new Date(),
+    profile?.trainingDays,
+    calendar[dateKey()]
+  );
   const todayIdx = todayWorkout ? workoutPlan.days.indexOf(todayWorkout) : -1;
   const t = nutritionTargets(profile);
   const band = readinessBand(readiness);

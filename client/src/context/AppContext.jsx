@@ -268,6 +268,13 @@ export function AppProvider({ children }) {
       const e = c[day] || { activities: [], hideWorkout: false };
       return { ...c, [day]: { ...e, hideWorkout: hidden } };
     });
+  // Place one of the plan's sessions (by index in workoutPlan.days) on a rest
+  // day, or clear it again with idx = null.
+  const setWorkoutAdded = (day, idx) =>
+    setCalendar((c) => {
+      const e = c[day] || { activities: [], hideWorkout: false };
+      return { ...c, [day]: { ...e, addWorkoutIdx: idx ?? undefined } };
+    });
 
   // Snapshot today's active plans into the history archive whenever they
   // change. References are stable between renders, so this only writes when a
@@ -392,6 +399,7 @@ export function AppProvider({ children }) {
     addActivity,
     removeActivity,
     setWorkoutHidden,
+    setWorkoutAdded,
     // Background-safe AI coach + plan generation.
     coachMessages,
     coachBusy,

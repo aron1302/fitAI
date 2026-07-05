@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useApp, dateKey } from "../context/AppContext.jsx";
-import { engineLabel, workoutForDate } from "../lib/calc.js";
+import { engineLabel, workoutForDate, effectiveWorkoutForDate } from "../lib/calc.js";
 import ExerciseHistory from "../components/ExerciseHistory.jsx";
 
 const MONTHS = [
@@ -74,7 +74,7 @@ function WorkoutView({ plan }) {
 // `dayIndex` is its position in workoutPlan.days; `logDate` / `canLog` drive the
 // "Log workout" link, which is offered for today or past days (you log what you
 // actually did).
-function ScheduledDayView({ day, dayIndex, upcoming, logDate, canLog, onRemove }) {
+function ScheduledDayView({ day, dayIndex, upcoming, added, logDate, canLog, onRemove }) {
   return (
     <div className="card" style={{ marginBottom: 18 }}>
       <div className="card-title-row">
@@ -83,7 +83,7 @@ function ScheduledDayView({ day, dayIndex, upcoming, logDate, canLog, onRemove }
           {day.day && day.focus && day.day !== day.focus ? ` — ${day.day}` : ""}
         </h3>
         <span className={`pill ${day.intensity || "moderate"}`}>
-          {upcoming ? "Upcoming" : "Scheduled"}
+          {added ? "Added by you" : upcoming ? "Upcoming" : "Scheduled"}
           {day.duration_min ? ` · ${day.duration_min} min` : ""}
         </span>
       </div>
@@ -313,6 +313,42 @@ function LoggedWorkoutCard({ date, dayLog }) {
   );
 }
 
+// Offered on rest days: pick one of the plan's sessions and place it on this
+// date. The added session then behaves like a scheduled one (loggable, shown on
+// the month grid) and can be removed again.
+function AddWorkoutCard({ plan, onAdd }) {
+  const [idx, setIdx] = useState(0);
+  const label = (d) => (d.focus && d.focus !== d.day ? `${d.day} — ${d.focus}` : d.day);
+  return (
+    <div className="card" style={{ marginBottom: 18 }}>
+      <div className="card-title-row">
+        <h3>Add a workout</h3>
+      </div>
+      <p className="muted" style={{ fontSize: 13.5, margin: "0 0 10px" }}>
+        Nothing scheduled here — add one of your plan&apos;s sessions to this day.
+      </p>
+      <form
+        className="activity-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          onAdd(Number(idx));
+        }}
+      >
+        <select value={idx} onChange={(e) => setIdx(e.target.value)}>
+          {plan.days.map((d, i) => (
+            <option key={i} value={i}>
+              {label(d)}
+            </option>
+          ))}
+        </select>
+        <button className="btn sm" type="submit">
+          + Add workout
+        </button>
+      </form>
+    </div>
+  );
+}
+
 // Shown when the user has removed the auto-scheduled workout for a day.
 function RemovedWorkoutNote({ day, onRestore }) {
   return (
@@ -343,6 +379,7 @@ export default function Calendar() {
     addActivity,
     removeActivity,
     setWorkoutHidden,
+    setWorkoutAdded,
   } = useApp();
   const trainingDays = profile?.trainingDays;
   const today = new Date();
@@ -364,7 +401,7 @@ export default function Calendar() {
   for (let d = 1; d <= daysInMonth; d++) {
     const dObj = new Date(cursor.y, cursor.m, d);
     const k = dateKey(dObj);
-    if (k >= todayKey && !calendar[k]?.hideWorkout && workoutForDate(workoutPlan, dObj, trainingDays))
+    if (k >= todayKey && effectiveWorkoutForDate(workoutPlan, dObj, trainingDays, calendar[k]))
       upcomingCount++;
   }
 
@@ -388,6 +425,11 @@ export default function Calendar() {
   const scheduledRaw = workoutForDate(workoutPlan, selectedDate, trainingDays);
   const scheduledDay = hideWorkout ? null : scheduledRaw;
   const scheduledIdx = scheduledDay ? workoutPlan.days.indexOf(scheduledDay) : -1;
+  // A plan session the user placed on this (otherwise rest) day.
+  const addedIdx = !scheduledRaw && Number.isInteger(calEntry?.addWorkoutIdx)
+    ? calEntry.addWorkoutIdx
+    : null;
+  const addedDay = addedIdx !== null ? workoutPlan?.days?.[addedIdx] || null : null;
   const isUpcoming = selected >= todayKey;
   // Sets actually recorded on the selected date, shown as their own card.
   const selectedLog = workoutLog[selected];
@@ -444,7 +486,7 @@ export default function Calendar() {
             const cal = calendar[key];
             const acts = cal?.activities || [];
             const actTypes = [...new Set(acts.map((a) => a.type))];
-            const sched = cal?.hideWorkout ? null : workoutForDate(workoutPlan, dObj, trainingDays);
+            const sched = effectiveWorkoutForDate(workoutPlan, dObj, trainingDays, cal);
             const isToday = key === todayKey;
             const isSel = key === selected;
             const isPast = key < todayKey;
@@ -492,7 +534,7 @@ export default function Calendar() {
       <div className="page-head" style={{ marginTop: 8 }}>
         <h2 style={{ margin: 0 }}>{prettyDate(selected)}</h2>
         <p>
-          {scheduledDay
+          {scheduledDay || addedDay
             ? "Training day"
             : hasLog
               ? "Workout logged"
@@ -511,6 +553,22 @@ export default function Calendar() {
           canLog={selected <= todayKey}
           onRemove={() => setWorkoutHidden(selected, true)}
         />
+      )}
+      {/* A session the user added onto this rest day. */}
+      {!scheduledDay && addedDay && (
+        <ScheduledDayView
+          day={addedDay}
+          dayIndex={addedIdx}
+          upcoming={isUpcoming}
+          added
+          logDate={selected}
+          canLog={selected <= todayKey}
+          onRemove={() => setWorkoutAdded(selected, null)}
+        />
+      )}
+      {/* Rest day with a plan available — offer to place a session here. */}
+      {!scheduledRaw && !addedDay && workoutPlan?.days?.length > 0 && (
+        <AddWorkoutCard plan={workoutPlan} onAdd={(idx) => setWorkoutAdded(selected, idx)} />
       )}
       {/* What was actually logged that day — viewable straight from the calendar. */}
       {hasLog && <LoggedWorkoutCard date={selected} dayLog={selectedLog} />}

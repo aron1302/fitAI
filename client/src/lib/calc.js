@@ -187,6 +187,17 @@ export function workoutForDate(plan, date, trainingDays) {
   return workoutSchedule(plan, trainingDays)[date.getDay()] || null;
 }
 
+// The workout that is effectively on a date once the user's per-day calendar
+// overrides are applied: a hidden (removed) scheduled workout yields null, and
+// a rest day the user added a plan session to (calEntry.addWorkoutIdx) yields
+// that session. Falls back to the plain schedule.
+export function effectiveWorkoutForDate(plan, date, trainingDays, calEntry) {
+  const sched = workoutForDate(plan, date, trainingDays);
+  if (sched) return calEntry?.hideWorkout ? null : sched;
+  const idx = calEntry?.addWorkoutIdx;
+  return Number.isInteger(idx) ? plan?.days?.[idx] || null : null;
+}
+
 // Friendly credit for whichever engine produced a plan.
 export function engineLabel(engine) {
   switch (engine) {
