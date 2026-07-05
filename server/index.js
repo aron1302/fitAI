@@ -103,6 +103,7 @@ import {
   PLAN_SCHEMAS,
   SuggestEditResultSchema,
 } from "./lib/schemas.js";
+import { recentTurns } from "./lib/promptContext.js";
 
 // Validate `value` against a Zod `schema`. Returns { ok:true, data } on success
 // or { ok:false, error } with a human-readable message listing the bad fields.
@@ -560,15 +561,19 @@ app.post("/api/coach-act", requireAuth, aiLimiter, async (req, res) => {
   if (p === "rules") return res.json({ action: "chat" });
 
   const lastUser = [...messages].reverse().find((m) => m.role === "user")?.content || "";
+  // The recent transcript lets a bare confirmation ("yes, do it") resolve
+  // against the plan the coach just proposed, instead of being seen in isolation.
+  const context = recentTurns(messages);
   try {
     const { target } = await planners[p].classify(
       lastUser,
       Boolean(workoutPlan),
-      Boolean(dietPlan)
+      Boolean(dietPlan),
+      context
     );
     const plan = target === "workout" ? workoutPlan : target === "diet" ? dietPlan : null;
     if (plan) {
-      const result = await planners[p].suggest(target, plan, lastUser, profile, recovery);
+      const result = await planners[p].suggest(target, plan, lastUser, profile, recovery, context);
       return res.json({ action: "update", kind: target, ...result });
     }
   } catch (err) {

@@ -107,10 +107,17 @@ export function suggestSystem(kind) {
 
 const KIND_SHAPE = { diet: DIET_SHAPE, recovery: RECOVERY_SHAPE, workout: WORKOUT_SHAPE };
 
-export function suggestUser(kind, plan, suggestion, profile, recovery) {
+// `context` (optional) is a short transcript of the recent conversation. When
+// the request is a bare confirmation ("yes, do it"), the coach's proposal in
+// that transcript is what should be applied.
+export function suggestUser(kind, plan, suggestion, profile, recovery, context = "") {
   return (
     `${profileContext(profile, recovery)}\n\n` +
     `CURRENT ${kind.toUpperCase()} PLAN (JSON):\n${JSON.stringify(plan)}\n\n` +
+    (context
+      ? `RECENT CONVERSATION (for context — if the request below is a short confirmation like "yes" or "do it", ` +
+        `apply the specific change the coach just proposed here):\n${context}\n\n`
+      : "") +
     `THE CLIENT REQUESTS THIS CHANGE:\n"${suggestion}"\n\n` +
     `Return ONLY a JSON object: { "approved": boolean, "reason": string, "plan": <PLAN> }\n` +
     `Rules: if approved is true, the "plan" you return MUST already include the requested change (edit the relevant ` +
@@ -121,18 +128,34 @@ export function suggestUser(kind, plan, suggestion, profile, recovery) {
 
 // Classify whether a coach message is a request to edit an existing plan.
 export const CLASSIFY_SYSTEM =
-  "You are an intent classifier for a fitness app's AI coach. Decide if the user's latest message is a request to CHANGE " +
+  "You are an intent classifier for a fitness app's AI coach. Decide if the user's LATEST message is a request to CHANGE " +
   "or EDIT one of their existing plans. Examples that ARE edits: 'change my push/pull/legs split to a bro split', " +
   "'swap leg day for arms', 'make my meals vegetarian', 'add more protein to my diet', 'remove dairy from my meal plan'. " +
-  "General questions, advice, or anything that is not a direct edit to an existing plan is 'none'. " +
+  "IMPORTANT: use the conversation so far for context. If the coach just proposed a specific plan/split and the user " +
+  "replies with a confirmation or an apply request — 'yes', 'do it', 'change it on the app', 'apply that', 'make that my " +
+  "plan' — that IS an edit; pick the plan type (workout/diet) the coach was just discussing. " +
+  "General questions, advice, or anything that is not a request to apply a change is 'none'. " +
   "Only pick 'workout' or 'diet' if that plan currently exists.";
 
-export function classifyUser(message, hasWorkout, hasDiet) {
+// `recentContext` is a short transcript of the last few turns (see recentTurns);
+// it lets a bare confirmation like "yes, do it" resolve against what the coach
+// just proposed.
+export function classifyUser(message, hasWorkout, hasDiet, recentContext = "") {
   return (
     `workout_plan_exists: ${hasWorkout}\ndiet_plan_exists: ${hasDiet}\n\n` +
-    `User message: "${message}"\n\n` +
+    (recentContext ? `Conversation so far:\n${recentContext}\n\n` : "") +
+    `User's latest message: "${message}"\n\n` +
     `Return ONLY JSON: {"target":"workout"|"diet"|"none"}`
   );
+}
+
+// A compact transcript of the last `n` messages for prompt context, capped so a
+// long chat can't blow the token budget.
+export function recentTurns(messages, n = 6) {
+  return (messages || [])
+    .slice(-n)
+    .map((m) => `${m.role === "assistant" ? "Coach" : "Client"}: ${String(m.content).slice(0, 800)}`)
+    .join("\n");
 }
 
 export function coachSystem(profile, recovery) {

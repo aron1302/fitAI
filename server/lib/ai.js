@@ -163,19 +163,19 @@ export async function aiRecoveryPlan(profile, recovery) {
   return structured(RECOVERY_SYSTEM, user, recoverySchema);
 }
 
-export async function aiClassifyEdit(message, hasWorkout, hasDiet) {
+export async function aiClassifyEdit(message, hasWorkout, hasDiet, context = "") {
   const schema = {
     type: "object",
     additionalProperties: false,
     properties: { target: { type: "string", enum: ["workout", "diet", "none"] } },
     required: ["target"],
   };
-  return structured(CLASSIFY_SYSTEM, classifyUser(message, hasWorkout, hasDiet), schema);
+  return structured(CLASSIFY_SYSTEM, classifyUser(message, hasWorkout, hasDiet, context), schema);
 }
 
 const PLAN_SCHEMAS = { diet: dietSchema, recovery: recoverySchema, workout: workoutSchema };
 
-export async function aiSuggestEdit(kind, plan, suggestion, profile, recovery) {
+export async function aiSuggestEdit(kind, plan, suggestion, profile, recovery, context = "") {
   const schema = {
     type: "object",
     additionalProperties: false,
@@ -188,7 +188,7 @@ export async function aiSuggestEdit(kind, plan, suggestion, profile, recovery) {
   };
   const result = await structured(
     suggestSystem(kind),
-    suggestUser(kind, plan, suggestion, profile, recovery),
+    suggestUser(kind, plan, suggestion, profile, recovery, context),
     schema
   );
   if (result.plan) result.plan._engine = "claude";

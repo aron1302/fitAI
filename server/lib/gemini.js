@@ -88,15 +88,15 @@ export async function geminiRecoveryPlan(profile, recovery) {
   return geminiJSON(RECOVERY_SYSTEM, user);
 }
 
-export async function geminiClassifyEdit(message, hasWorkout, hasDiet) {
-  const result = await geminiJSON(CLASSIFY_SYSTEM, classifyUser(message, hasWorkout, hasDiet));
+export async function geminiClassifyEdit(message, hasWorkout, hasDiet, context = "") {
+  const result = await geminiJSON(CLASSIFY_SYSTEM, classifyUser(message, hasWorkout, hasDiet, context));
   return { target: ["workout", "diet"].includes(result.target) ? result.target : "none" };
 }
 
-export async function geminiSuggestEdit(kind, plan, suggestion, profile, recovery) {
+export async function geminiSuggestEdit(kind, plan, suggestion, profile, recovery, context = "") {
   const result = await geminiJSON(
     suggestSystem(kind),
-    suggestUser(kind, plan, suggestion, profile, recovery)
+    suggestUser(kind, plan, suggestion, profile, recovery, context)
   );
   if (typeof result.approved !== "boolean" || !result.plan)
     throw new Error("Gemini returned an unexpected suggestion shape");

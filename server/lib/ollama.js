@@ -97,15 +97,15 @@ export async function ollamaRecoveryPlan(profile, recovery) {
   return plan;
 }
 
-export async function ollamaClassifyEdit(message, hasWorkout, hasDiet) {
-  const result = await ollamaJSON(CLASSIFY_SYSTEM, classifyUser(message, hasWorkout, hasDiet));
+export async function ollamaClassifyEdit(message, hasWorkout, hasDiet, context = "") {
+  const result = await ollamaJSON(CLASSIFY_SYSTEM, classifyUser(message, hasWorkout, hasDiet, context));
   return { target: ["workout", "diet"].includes(result.target) ? result.target : "none" };
 }
 
-export async function ollamaSuggestEdit(kind, plan, suggestion, profile, recovery) {
+export async function ollamaSuggestEdit(kind, plan, suggestion, profile, recovery, context = "") {
   const result = await ollamaJSON(
     suggestSystem(kind),
-    suggestUser(kind, plan, suggestion, profile, recovery)
+    suggestUser(kind, plan, suggestion, profile, recovery, context)
   );
   if (typeof result.approved !== "boolean" || !result.plan || typeof result.reason !== "string") {
     throw new Error("Ollama returned an unexpected suggestion shape");
