@@ -22,6 +22,24 @@ import Coach from "./pages/Coach.jsx";
 import Calendar from "./pages/Calendar.jsx";
 import Profile from "./pages/Profile.jsx";
 import "./index.css";
+import { registerSW } from "virtual:pwa-register";
+
+// Keep installed PWAs fresh. The service worker only checks for a new version
+// when the browser decides (typically a cold launch, throttled to ~daily), so a
+// phone app resumed from memory can lag behind deploys for days. Re-check every
+// hour and whenever the app returns to the foreground; in autoUpdate mode the
+// page reloads itself once the new version is ready.
+registerSW({
+  immediate: true,
+  onRegisteredSW(_swUrl, registration) {
+    if (!registration) return;
+    const check = () => registration.update().catch(() => {});
+    setInterval(check, 60 * 60 * 1000);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") check();
+    });
+  },
+});
 
 // Decide what to render based on auth state: a loading splash, the auth screen,
 // or the full app. AppProvider is keyed by user id so its state (and the
