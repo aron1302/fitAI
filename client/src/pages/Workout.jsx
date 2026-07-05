@@ -179,7 +179,13 @@ export default function Workout() {
                         className="edit-inp"
                         value={d.day}
                         onChange={(e) => patchDay(i, { day: e.target.value })}
-                        placeholder="Day name"
+                        placeholder="Day (e.g. Monday)"
+                      />
+                      <input
+                        className="edit-inp"
+                        value={d.focus || ""}
+                        onChange={(e) => patchDay(i, { focus: e.target.value })}
+                        placeholder="Focus (e.g. Push)"
                       />
                       <button className="icon-btn" title="Remove day" onClick={() => removeDay(i)}>
                         ×
@@ -246,7 +252,12 @@ export default function Workout() {
                 ) : (
                   <>
                     <div className="day-head">
-                      <span className="focus">{d.day}</span>
+                      <span className="day-title">
+                        <span className="focus">{d.day}</span>
+                        {d.focus && d.focus.trim().toLowerCase() !== d.day.trim().toLowerCase() && (
+                          <span className="day-focus">{d.focus}</span>
+                        )}
+                      </span>
                       <div className="row" style={{ gap: 8 }}>
                         <span className={`pill ${d.intensity}`}>
                           {d.intensity} · {d.duration_min} min
