@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useApp } from "../context/AppContext.jsx";
-import { readinessBand, engineLabel } from "../lib/calc.js";
+import { useApp, dateKey } from "../context/AppContext.jsx";
+import { readinessBand, engineLabel, effectiveWorkoutForDate } from "../lib/calc.js";
 import SuggestEdit from "../components/SuggestEdit.jsx";
 import ExerciseDemo from "../components/ExerciseDemo.jsx";
 
@@ -25,6 +25,135 @@ function normalizeDays(days) {
   }));
 }
 
+// Read-only card for one training day: day/focus header, intensity pill,
+// "Log workout" link, a per-day edit button, and the exercise list with demos.
+function DayView({ day, dayIndex, onEditDay }) {
+  return (
+    <div className="card day-card">
+      <div className="day-head">
+        <span className="day-title">
+          <span className="focus">{day.day}</span>
+          {day.focus && day.focus.trim().toLowerCase() !== day.day.trim().toLowerCase() && (
+            <span className="day-focus">{day.focus}</span>
+          )}
+        </span>
+        <div className="row" style={{ gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <span className={`pill ${day.intensity}`}>
+            {day.intensity} · {day.duration_min} min
+          </span>
+          {dayIndex >= 0 && (
+            <Link className="btn ghost sm" to={`/workout/log/${dayIndex}`}>
+              Log workout
+            </Link>
+          )}
+          {onEditDay && (
+            <button className="btn ghost sm" onClick={onEditDay} title="Edit this workout">
+              ✎ Edit
+            </button>
+          )}
+        </div>
+      </div>
+      {day.exercises.map((ex, j) => (
+        <div key={j} className="ex-row">
+          <ExerciseDemo name={ex.name} description={ex.notes} meta={`${ex.sets} × ${ex.reps}`} />
+          <div className="ex">
+            <span className="ex-name">{ex.name}</span>
+            <span className="ex-scheme">
+              {ex.sets} × {ex.reps}
+            </span>
+            {ex.notes && (
+              <span className={`ex-notes ${ex.notes.startsWith("⚠") ? "warn" : ""}`}>
+                {ex.notes}
+              </span>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Editable card for one training day — used by both whole-plan editing and the
+// per-day "✎ Edit". `onRemoveDay` is only offered when editing the whole plan.
+function DayEdit({ day, di, patchDay, patchEx, addEx, removeEx, onRemoveDay }) {
+  return (
+    <div className="card day-card">
+      <div className="row" style={{ gap: 8, marginBottom: 10 }}>
+        <input
+          className="edit-inp"
+          value={day.day}
+          onChange={(e) => patchDay(di, { day: e.target.value })}
+          placeholder="Day (e.g. Monday)"
+        />
+        <input
+          className="edit-inp"
+          value={day.focus || ""}
+          onChange={(e) => patchDay(di, { focus: e.target.value })}
+          placeholder="Focus (e.g. Push)"
+        />
+        {onRemoveDay && (
+          <button className="icon-btn" title="Remove day" onClick={onRemoveDay}>
+            ×
+          </button>
+        )}
+      </div>
+      <div className="row" style={{ gap: 8, marginBottom: 6 }}>
+        <select
+          className="edit-inp sm"
+          value={day.intensity}
+          onChange={(e) => patchDay(di, { intensity: e.target.value })}
+        >
+          <option value="low">low</option>
+          <option value="moderate">moderate</option>
+          <option value="high">high</option>
+        </select>
+        <input
+          className="edit-inp sm"
+          type="number"
+          value={day.duration_min}
+          onChange={(e) => patchDay(di, { duration_min: Number(e.target.value) })}
+          title="Minutes"
+        />
+      </div>
+      {day.exercises.map((ex, j) => (
+        <div key={j} className="ex-edit">
+          <input
+            className="edit-inp sm"
+            value={ex.name}
+            onChange={(e) => patchEx(di, j, { name: e.target.value })}
+            placeholder="Exercise name"
+          />
+          <input
+            className="edit-inp sm"
+            type="number"
+            value={ex.sets}
+            onChange={(e) => patchEx(di, j, { sets: Number(e.target.value) })}
+            title="Sets"
+          />
+          <input
+            className="edit-inp sm"
+            value={ex.reps}
+            onChange={(e) => patchEx(di, j, { reps: e.target.value })}
+            title="Reps"
+          />
+          <button className="icon-btn" title="Remove exercise" onClick={() => removeEx(di, j)}>
+            ×
+          </button>
+          <input
+            className="edit-inp sm ex-notes-edit"
+            value={ex.notes || ""}
+            onChange={(e) => patchEx(di, j, { notes: e.target.value })}
+            placeholder="Notes (optional)"
+          />
+        </div>
+      ))}
+      <button className="add-btn" onClick={() => addEx(di)}>
+        + Add exercise
+      </button>
+    </div>
+  );
+}
+
 export default function Workout() {
   const {
     profile,
@@ -34,6 +163,7 @@ export default function Workout() {
     setWorkoutPlan: setPlan,
     recoveryPlan,
     setRecoveryPlan,
+    calendar,
     genState,
     generateWorkout,
     generateRecovery,
@@ -43,10 +173,31 @@ export default function Workout() {
   const { loading, error } = genState.workout;
   const { loading: recLoading, error: recError } = genState.recovery;
   const [draft, setDraft] = useState(null); // non-null while editing
+  // What the draft covers: "all" (whole-plan edit) or a single day's index.
+  const [editScope, setEditScope] = useState("all");
+  // false = just today's session (default); true = the full week grid.
+  const [week, setWeek] = useState(false);
   const band = readinessBand(readiness);
 
+  // Today's session, honouring the calendar's per-day overrides (a removed
+  // scheduled workout or one the user added onto a rest day).
+  const todayWorkout = effectiveWorkoutForDate(
+    plan,
+    new Date(),
+    profile?.trainingDays,
+    calendar[dateKey()]
+  );
+  const todayIdx = todayWorkout && plan ? plan.days.indexOf(todayWorkout) : -1;
+
   // ---- editing helpers (operate on a draft copy) ----
-  const startEdit = () => setDraft(structuredClone(plan));
+  const startEdit = () => {
+    setDraft(structuredClone(plan));
+    setEditScope("all");
+  };
+  const startEditDay = (i) => {
+    setDraft(structuredClone(plan));
+    setEditScope(i);
+  };
   const cancelEdit = () => setDraft(null);
   const saveEdit = () => {
     setPlan({ ...draft, days: normalizeDays(draft.days), _edited: true });
@@ -84,10 +235,23 @@ export default function Workout() {
   return (
     <>
       <div className="page-head">
-        <h1>AI Workout Plan</h1>
-        <p>
-          Built around your goal, age, weight, and today's readiness ({readiness}/100 · {band}).
-        </p>
+        <div
+          className="row"
+          style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}
+        >
+          <div>
+            <h1>AI Workout Plan</h1>
+            <p>
+              Built around your goal, age, weight, and today's readiness ({readiness}/100 · {band}
+              ).
+            </p>
+          </div>
+          {plan && !editing && (
+            <button className="btn ghost sm" onClick={() => setWeek((w) => !w)}>
+              {week ? "Today's workout" : "View full week →"}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="card" style={{ marginBottom: 18 }}>
@@ -106,7 +270,7 @@ export default function Workout() {
           <div className="row" style={{ gap: 10 }}>
             {plan && !editing && (
               <button className="btn ghost" onClick={startEdit}>
-                ✎ Edit
+                ✎ Edit plan
               </button>
             )}
             <button className="btn" onClick={generateWorkout} disabled={loading || editing}>
@@ -145,7 +309,9 @@ export default function Workout() {
 
       {editing && (
         <div className="edit-bar">
-          <span style={{ fontWeight: 700 }}>✎ Editing plan</span>
+          <span style={{ fontWeight: 700 }}>
+            ✎ {editScope === "all" ? "Editing plan" : `Editing ${view.days[editScope]?.day || "day"}`}
+          </span>
           <span className="muted" style={{ fontSize: 13 }}>
             Make your changes, then save.
           </span>
@@ -158,7 +324,88 @@ export default function Workout() {
         </div>
       )}
 
-      {view && (
+      {/* Editing a single day: just that day's card. */}
+      {view && editing && editScope !== "all" && view.days[editScope] && (
+        <DayEdit
+          day={view.days[editScope]}
+          di={editScope}
+          patchDay={patchDay}
+          patchEx={patchEx}
+          addEx={addEx}
+          removeEx={removeEx}
+        />
+      )}
+
+      {/* Editing the whole plan: summary + every day + add/remove days. */}
+      {view && editing && editScope === "all" && (
+        <>
+          <div className="card" style={{ marginBottom: 18 }}>
+            <div className="card-title-row">
+              <h3>This Week</h3>
+              <span className="engine-tag">✎ Editing</span>
+            </div>
+            <textarea
+              className="edit-inp"
+              rows={2}
+              value={view.summary}
+              onChange={(e) => patchDraft({ summary: e.target.value })}
+            />
+          </div>
+          <div className="grid cols-2">
+            {view.days.map((d, i) => (
+              <DayEdit
+                key={i}
+                day={d}
+                di={i}
+                patchDay={patchDay}
+                patchEx={patchEx}
+                addEx={addEx}
+                removeEx={removeEx}
+                onRemoveDay={() => removeDay(i)}
+              />
+            ))}
+          </div>
+          <button className="add-btn" onClick={addDay}>
+            + Add training day
+          </button>
+        </>
+      )}
+
+      {/* Default view: just today's session, front and centre. */}
+      {view && !editing && !week && (
+        <>
+          {todayIdx >= 0 ? (
+            <>
+              <DayView
+                day={view.days[todayIdx]}
+                dayIndex={todayIdx}
+                onEditDay={() => startEditDay(todayIdx)}
+              />
+              {view.cautions && (
+                <div className="callout warn" style={{ marginTop: 16 }}>
+                  ⚠ {view.cautions}
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="card empty">
+              <div style={{ fontSize: 40, marginBottom: 10 }}>😴</div>
+              <p>There aren&apos;t any workouts scheduled for today — it&apos;s a rest day.</p>
+              <div className="row" style={{ justifyContent: "center", gap: 10, marginTop: 12 }}>
+                <button className="btn ghost" onClick={() => setWeek(true)}>
+                  View full week
+                </button>
+                <Link className="btn" to="/calendar">
+                  Add one from the calendar
+                </Link>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Full-week view: summary, guidance, and every day's card. */}
+      {view && !editing && week && (
         <>
           <div className="card" style={{ marginBottom: 18 }}>
             <div className="card-title-row">
@@ -167,156 +414,21 @@ export default function Workout() {
                 {view._edited ? "✎ Edited by you" : engineLabel(view._engine)}
               </span>
             </div>
-            {editing ? (
-              <textarea
-                className="edit-inp"
-                rows={2}
-                value={view.summary}
-                onChange={(e) => patchDraft({ summary: e.target.value })}
-              />
-            ) : (
-              <p style={{ fontSize: 15, lineHeight: 1.6, margin: "0 0 14px" }}>{view.summary}</p>
-            )}
-            {!editing && (
-              <div className="callout">
-                <b>Readiness guidance:</b> {view.readiness_guidance}
-              </div>
-            )}
-            {!editing && view.cautions && (
+            <p style={{ fontSize: 15, lineHeight: 1.6, margin: "0 0 14px" }}>{view.summary}</p>
+            <div className="callout">
+              <b>Readiness guidance:</b> {view.readiness_guidance}
+            </div>
+            {view.cautions && (
               <div className="callout warn" style={{ marginTop: 12 }}>
                 ⚠ {view.cautions}
               </div>
             )}
           </div>
-
           <div className="grid cols-2">
             {view.days.map((d, i) => (
-              <div key={i} className="card day-card">
-                {editing ? (
-                  <>
-                    <div className="row" style={{ gap: 8, marginBottom: 10 }}>
-                      <input
-                        className="edit-inp"
-                        value={d.day}
-                        onChange={(e) => patchDay(i, { day: e.target.value })}
-                        placeholder="Day (e.g. Monday)"
-                      />
-                      <input
-                        className="edit-inp"
-                        value={d.focus || ""}
-                        onChange={(e) => patchDay(i, { focus: e.target.value })}
-                        placeholder="Focus (e.g. Push)"
-                      />
-                      <button className="icon-btn" title="Remove day" onClick={() => removeDay(i)}>
-                        ×
-                      </button>
-                    </div>
-                    <div className="row" style={{ gap: 8, marginBottom: 6 }}>
-                      <select
-                        className="edit-inp sm"
-                        value={d.intensity}
-                        onChange={(e) => patchDay(i, { intensity: e.target.value })}
-                      >
-                        <option value="low">low</option>
-                        <option value="moderate">moderate</option>
-                        <option value="high">high</option>
-                      </select>
-                      <input
-                        className="edit-inp sm"
-                        type="number"
-                        value={d.duration_min}
-                        onChange={(e) => patchDay(i, { duration_min: Number(e.target.value) })}
-                        title="Minutes"
-                      />
-                    </div>
-                    {d.exercises.map((ex, j) => (
-                      <div key={j} className="ex-edit">
-                        <input
-                          className="edit-inp sm"
-                          value={ex.name}
-                          onChange={(e) => patchEx(i, j, { name: e.target.value })}
-                          placeholder="Exercise name"
-                        />
-                        <input
-                          className="edit-inp sm"
-                          type="number"
-                          value={ex.sets}
-                          onChange={(e) => patchEx(i, j, { sets: Number(e.target.value) })}
-                          title="Sets"
-                        />
-                        <input
-                          className="edit-inp sm"
-                          value={ex.reps}
-                          onChange={(e) => patchEx(i, j, { reps: e.target.value })}
-                          title="Reps"
-                        />
-                        <button
-                          className="icon-btn"
-                          title="Remove exercise"
-                          onClick={() => removeEx(i, j)}
-                        >
-                          ×
-                        </button>
-                        <input
-                          className="edit-inp sm ex-notes-edit"
-                          value={ex.notes || ""}
-                          onChange={(e) => patchEx(i, j, { notes: e.target.value })}
-                          placeholder="Notes (optional)"
-                        />
-                      </div>
-                    ))}
-                    <button className="add-btn" onClick={() => addEx(i)}>
-                      + Add exercise
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <div className="day-head">
-                      <span className="day-title">
-                        <span className="focus">{d.day}</span>
-                        {d.focus && d.focus.trim().toLowerCase() !== d.day.trim().toLowerCase() && (
-                          <span className="day-focus">{d.focus}</span>
-                        )}
-                      </span>
-                      <div className="row" style={{ gap: 8 }}>
-                        <span className={`pill ${d.intensity}`}>
-                          {d.intensity} · {d.duration_min} min
-                        </span>
-                        <Link className="btn ghost sm" to={`/workout/log/${i}`}>
-                          Log workout
-                        </Link>
-                      </div>
-                    </div>
-                    {d.exercises.map((ex, j) => (
-                      <div key={j} className="ex-row">
-                        <ExerciseDemo
-                          name={ex.name}
-                          description={ex.notes}
-                          meta={`${ex.sets} × ${ex.reps}`}
-                        />
-                        <div className="ex">
-                          <span className="ex-name">{ex.name}</span>
-                          <span className="ex-scheme">
-                            {ex.sets} × {ex.reps}
-                          </span>
-                          {ex.notes && (
-                            <span className={`ex-notes ${ex.notes.startsWith("⚠") ? "warn" : ""}`}>
-                              {ex.notes}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </>
-                )}
-              </div>
+              <DayView key={i} day={d} dayIndex={i} onEditDay={() => startEditDay(i)} />
             ))}
           </div>
-          {editing && (
-            <button className="add-btn" onClick={addDay}>
-              + Add training day
-            </button>
-          )}
         </>
       )}
 
