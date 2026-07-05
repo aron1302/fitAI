@@ -1,7 +1,13 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useApp, dateKey } from "../context/AppContext.jsx";
-import { engineLabel, workoutForDate, effectiveWorkoutForDate } from "../lib/calc.js";
+import {
+  engineLabel,
+  workoutForDate,
+  effectiveWorkoutForDate,
+  ACTIVITY_TYPES,
+  activityType,
+} from "../lib/calc.js";
 import ExerciseHistory from "../components/ExerciseHistory.jsx";
 
 const MONTHS = [
@@ -158,18 +164,6 @@ function DietView({ plan }) {
     </div>
   );
 }
-
-// User-addable activity types (a run, mobility work, etc.) with a colour used
-// for the calendar dot and the activity pill.
-const ACTIVITY_TYPES = [
-  { value: "cardio", label: "Cardio / Run", color: "var(--accent-2)" },
-  { value: "flexibility", label: "Flexibility", color: "var(--accent-3)" },
-  { value: "mobility", label: "Mobility", color: "var(--accent)" },
-  { value: "sport", label: "Sport", color: "var(--warn)" },
-  { value: "other", label: "Other", color: "var(--muted)" },
-];
-const activityType = (v) =>
-  ACTIVITY_TYPES.find((t) => t.value === v) || ACTIVITY_TYPES[ACTIVITY_TYPES.length - 1];
 
 // Activity types that map to a dedicated page, shown as a quick link.
 const ACTIVITY_LINKS = {
@@ -384,8 +378,19 @@ export default function Calendar() {
   const trainingDays = profile?.trainingDays;
   const today = new Date();
   const todayKey = dateKey(today);
-  const [cursor, setCursor] = useState({ y: today.getFullYear(), m: today.getMonth() });
-  const [selected, setSelected] = useState(todayKey);
+  // A "?date=YYYY-MM-DD" query (e.g. from the dashboard's Upcoming strip)
+  // opens the calendar with that day selected and its month in view.
+  const [params] = useSearchParams();
+  const rawParam = params.get("date") || "";
+  const paramDate = /^\d{4}-\d{2}-\d{2}$/.test(rawParam) ? rawParam : null;
+  const [cursor, setCursor] = useState(() => {
+    if (paramDate) {
+      const [y, m] = paramDate.split("-").map(Number);
+      return { y, m: m - 1 };
+    }
+    return { y: today.getFullYear(), m: today.getMonth() };
+  });
+  const [selected, setSelected] = useState(paramDate || todayKey);
 
   const firstDow = new Date(cursor.y, cursor.m, 1).getDay();
   const daysInMonth = new Date(cursor.y, cursor.m + 1, 0).getDate();

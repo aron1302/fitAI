@@ -198,6 +198,18 @@ export function effectiveWorkoutForDate(plan, date, trainingDays, calEntry) {
   return Number.isInteger(idx) ? plan?.days?.[idx] || null : null;
 }
 
+// User-addable activity types (a run, mobility work, etc.) with a colour used
+// for calendar dots and activity pills. Shared by the Calendar and Dashboard.
+export const ACTIVITY_TYPES = [
+  { value: "cardio", label: "Cardio / Run", color: "var(--accent-2)" },
+  { value: "flexibility", label: "Flexibility", color: "var(--accent-3)" },
+  { value: "mobility", label: "Mobility", color: "var(--accent)" },
+  { value: "sport", label: "Sport", color: "var(--warn)" },
+  { value: "other", label: "Other", color: "var(--muted)" },
+];
+export const activityType = (v) =>
+  ACTIVITY_TYPES.find((t) => t.value === v) || ACTIVITY_TYPES[ACTIVITY_TYPES.length - 1];
+
 // Friendly credit for whichever engine produced a plan.
 export function engineLabel(engine) {
   switch (engine) {

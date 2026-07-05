@@ -11,7 +11,79 @@ import {
   vo2maxRating,
   hrvBand,
   effectiveWorkoutForDate,
+  activityType,
 } from "../lib/calc.js";
+
+// The dashboard's "Upcoming" strip: the next 7 days at a glance, each tile
+// linking to that day on the calendar. Shows the scheduled workout (after any
+// per-day calendar overrides) plus user-added activities; days with neither
+// read as rest/recovery.
+function UpcomingStrip({ workoutPlan, trainingDays, calendar }) {
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const date = new Date();
+    date.setDate(date.getDate() + i);
+    const key = dateKey(date);
+    days.push({
+      key,
+      date,
+      workout: effectiveWorkoutForDate(workoutPlan, date, trainingDays, calendar[key]),
+      activities: calendar[key]?.activities || [],
+    });
+  }
+  const dow = (date, i) =>
+    i === 0
+      ? "Today"
+      : i === 1
+        ? "Tomorrow"
+        : date.toLocaleDateString(undefined, { weekday: "short" });
+
+  return (
+    <div className="card" style={{ marginBottom: 18 }}>
+      <div className="card-title-row">
+        <h3>Upcoming</h3>
+        <Link to="/calendar" className="activity-link">
+          Full calendar →
+        </Link>
+      </div>
+      <div className="up-strip">
+        {days.map(({ key, date, workout, activities }, i) => (
+          <Link key={key} to={`/calendar?date=${key}`} className={`up-day${i === 0 ? " today" : ""}`}>
+            <span className="up-dow">{dow(date, i)}</span>
+            <span className="up-date">
+              {date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+            </span>
+            {workout && (
+              <span className="up-item workout" title={workout.day}>
+                {workout.focus || workout.day}
+                {workout.duration_min ? ` · ${workout.duration_min} min` : ""}
+              </span>
+            )}
+            {activities.map((a) => (
+              <span
+                key={a.id}
+                className="up-item"
+                style={{ color: activityType(a.type).color }}
+                title={a.title || activityType(a.type).label}
+              >
+                {activityType(a.type).label}
+              </span>
+            ))}
+            {!workout && activities.length === 0 && (
+              <span className="up-rest">Rest &amp; recovery</span>
+            )}
+          </Link>
+        ))}
+      </div>
+      {!workoutPlan && (
+        <p className="muted" style={{ fontSize: 13.5, margin: "12px 0 0" }}>
+          <Link to="/workout">Generate a workout plan</Link> to see your training sessions mapped
+          across the week.
+        </p>
+      )}
+    </div>
+  );
+}
 
 function Ring({ value, max = 100, size = 132, label, sub, color = "var(--accent)" }) {
   const r = (size - 16) / 2;
@@ -129,6 +201,12 @@ export default function Dashboard() {
           <Link to="/profile">Complete profile →</Link>
         </div>
       )}
+
+      <UpcomingStrip
+        workoutPlan={workoutPlan}
+        trainingDays={profile?.trainingDays}
+        calendar={calendar}
+      />
 
       <div className="grid cols-4">
         <StatCard
