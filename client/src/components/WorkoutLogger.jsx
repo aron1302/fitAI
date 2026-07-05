@@ -65,6 +65,7 @@ export default function WorkoutLogger({ exercise, day = dateKey() }) {
           type="number"
           inputMode="decimal"
           min="0"
+          step="any"
           placeholder="kg"
           value={weight}
           onChange={(e) => setWeight(e.target.value)}
