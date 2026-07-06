@@ -1,8 +1,9 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useApp, dateKey } from "../context/AppContext.jsx";
 import { nutritionTargets } from "../lib/calc.js";
 import { analyzeMealRequest, friendlyError } from "../lib/api.js";
 import { fileToInlineImage } from "../lib/image.js";
+import PhotoPicker from "./PhotoPicker.jsx";
 
 // "Plan as you go" — for users who don't follow the meal plan to the letter.
 // Describe a meal in words and/or attach a photo; the AI estimates its
@@ -16,7 +17,6 @@ import { fileToInlineImage } from "../lib/image.js";
 export default function MealTracker({ planEaten = [] }) {
   const { profile, eatenMeals, addEatenMeal, removeEatenMeal } = useApp();
   const t = nutritionTargets(profile);
-  const fileRef = useRef(null);
 
   const [desc, setDesc] = useState("");
   const [photo, setPhoto] = useState(null); // { mimeType, data, previewUrl }
@@ -27,10 +27,7 @@ export default function MealTracker({ planEaten = [] }) {
   const today = dateKey();
   const logged = eatenMeals[today] || [];
 
-  async function pickPhoto(e) {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // allow re-picking the same file
-    if (!file) return;
+  async function pickPhoto(file) {
     setError(null);
     try {
       setPhoto(await fileToInlineImage(file));
@@ -90,8 +87,8 @@ export default function MealTracker({ planEaten = [] }) {
         <span className="engine-tag">AI nutrition estimate</span>
       </div>
       <p className="muted" style={{ fontSize: 13.5, lineHeight: 1.6, margin: "0 0 12px" }}>
-        Ate something off-plan? Describe it, or snap a photo, and the AI will estimate its
-        nutrition and tell you how to handle the rest of the day.
+        Ate something off-plan? Describe it, or snap a photo, and the AI will estimate its nutrition
+        and tell you how to handle the rest of the day.
       </p>
 
       {/* Meals already logged today via this tracker. */}
@@ -128,13 +125,6 @@ export default function MealTracker({ planEaten = [] }) {
           disabled={busy}
         />
         <div className="row" style={{ gap: 10, marginTop: 10, flexWrap: "wrap" }}>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            style={{ display: "none" }}
-            onChange={pickPhoto}
-          />
           {photo ? (
             <span className="pag-photo">
               <img src={photo.previewUrl} alt="Meal to analyse" />
@@ -148,14 +138,7 @@ export default function MealTracker({ planEaten = [] }) {
               </button>
             </span>
           ) : (
-            <button
-              type="button"
-              className="btn ghost sm"
-              onClick={() => fileRef.current?.click()}
-              disabled={busy}
-            >
-              📷 Add a photo
-            </button>
+            <PhotoPicker disabled={busy} onPick={pickPhoto} />
           )}
           <button className="btn sm" type="submit" disabled={busy || (!desc.trim() && !photo)}>
             {busy ? (
@@ -180,7 +163,10 @@ export default function MealTracker({ planEaten = [] }) {
 
       {meal && (
         <div className="pag-result">
-          <div className="row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+          <div
+            className="row"
+            style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}
+          >
             <span className="pag-result-name">{meal.name}</span>
             <span className={`pag-conf ${meal.confidence || "medium"}`}>
               {meal.confidence || "medium"} confidence
