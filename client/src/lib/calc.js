@@ -118,6 +118,13 @@ export function todayActivity(profile, log = {}, tracked = null) {
   };
 }
 
+// Rough calories burned by a resistance-training session, from Compendium MET
+// values (light ~3.5, moderate ~5, vigorous ~6): kcal ≈ MET × kg × hours.
+export function workoutCalories(profile, intensity, minutes) {
+  const met = intensity === "high" ? 6 : intensity === "low" ? 3.5 : 5;
+  return Math.round((met * (profile?.weightKg || 70) * minutes) / 60);
+}
+
 // Estimate VO2 max (ml/kg/min) from resting HR and age — the Uth–Sørensen
 // method: VO2max ≈ 15.3 × (HRmax / HRrest), with HRmax from Tanaka (208 − 0.7·age).
 export function vo2max(profile, recovery = {}) {
@@ -289,7 +296,13 @@ export function weeklyExtras(profile, plan, trainingDays) {
 
 // Display metadata for the scheduled extras (icon, colour, destination page).
 export const EXTRA_META = {
-  cardio: { label: "Cardio", icon: "🏃", color: "var(--accent-2)", to: "/cardio", cta: "Open Cardio" },
+  cardio: {
+    label: "Cardio",
+    icon: "🏃",
+    color: "var(--accent-2)",
+    to: "/cardio",
+    cta: "Open Cardio",
+  },
   flexibility: {
     label: "Flexibility",
     icon: "🧘",

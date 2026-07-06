@@ -185,8 +185,15 @@ function runMigrations() {
     "CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at INTEGER)";
   if (useReplica) db.prepare(bootstrap).run();
   else db.exec(bootstrap);
-  const applied = new Set(db.prepare("SELECT name FROM schema_migrations").all().map((r) => r.name));
-  const record = db.prepare("INSERT INTO schema_migrations (name, applied_at) VALUES (?, unixepoch())");
+  const applied = new Set(
+    db
+      .prepare("SELECT name FROM schema_migrations")
+      .all()
+      .map((r) => r.name)
+  );
+  const record = db.prepare(
+    "INSERT INTO schema_migrations (name, applied_at) VALUES (?, unixepoch())"
+  );
   // Statements are executed one at a time: a multi-statement exec() inside an
   // explicit transaction breaks libsql's replica write delegation (the ROLLBACK
   // then fails with InvalidParserState). Migration SQL contains no semicolons
@@ -198,7 +205,10 @@ function runMigrations() {
   // path — the same path every runtime query uses. Each DDL statement is atomic
   // on its own, and schema_migrations records only fully-applied migrations.
   const applyStatements = (m) => {
-    for (const stmt of m.sql.split(";").map((s) => s.trim()).filter(Boolean)) {
+    for (const stmt of m.sql
+      .split(";")
+      .map((s) => s.trim())
+      .filter(Boolean)) {
       if (useReplica) db.prepare(stmt).run();
       else db.exec(stmt);
     }
@@ -286,11 +296,17 @@ export function setCachedExerciseImage(id, resolution, buffer, contentType) {
 // bulk importer can self-host exactly the GIFs the app actually shows.
 export function getStoredExerciseNames() {
   const names = new Set();
-  const rows = db.prepare("SELECT value FROM app_state WHERE key IN ('workoutPlan', 'history')").all();
+  const rows = db
+    .prepare("SELECT value FROM app_state WHERE key IN ('workoutPlan', 'history')")
+    .all();
   for (const r of rows) {
     try {
       const v = JSON.parse(r.value);
-      const plans = v?.days ? [v] : Object.values(v || {}).map((d) => d?.workout).filter(Boolean);
+      const plans = v?.days
+        ? [v]
+        : Object.values(v || {})
+            .map((d) => d?.workout)
+            .filter(Boolean);
       for (const p of plans) {
         for (const day of p.days || []) {
           for (const e of day.exercises || []) if (e?.name) names.add(e.name);
@@ -317,6 +333,7 @@ export const STATE_KEYS = [
   "history",
   "mealLog",
   "workoutLog",
+  "workoutSessions",
   "eatenMeals",
   "calendar",
 ];
@@ -395,16 +412,12 @@ const enableTotpStmt = db.prepare("UPDATE users SET totp_enabled = 1 WHERE id = 
 const disableTotpStmt = db.prepare(
   "UPDATE users SET totp_secret = NULL, totp_enabled = 0 WHERE id = ?"
 );
-const insertRecovery = db.prepare(
-  "INSERT INTO recovery_codes (user_id, code_hash) VALUES (?, ?)"
-);
+const insertRecovery = db.prepare("INSERT INTO recovery_codes (user_id, code_hash) VALUES (?, ?)");
 const deleteRecovery = db.prepare("DELETE FROM recovery_codes WHERE user_id = ?");
 const findRecovery = db.prepare(
   "SELECT id FROM recovery_codes WHERE user_id = ? AND code_hash = ? AND used = 0"
 );
-const markRecoveryUsed = db.prepare(
-  "UPDATE recovery_codes SET used = 1 WHERE id = ? AND used = 0"
-);
+const markRecoveryUsed = db.prepare("UPDATE recovery_codes SET used = 1 WHERE id = ? AND used = 0");
 const countUnusedRecovery = db.prepare(
   "SELECT COUNT(*) AS n FROM recovery_codes WHERE user_id = ? AND used = 0"
 );
@@ -441,9 +454,7 @@ const selectEmailToken = db.prepare(
   "SELECT user_id, kind, expires_at FROM email_tokens WHERE token_hash = ?"
 );
 const deleteEmailToken = db.prepare("DELETE FROM email_tokens WHERE token_hash = ?");
-const deleteUserKindTokens = db.prepare(
-  "DELETE FROM email_tokens WHERE user_id = ? AND kind = ?"
-);
+const deleteUserKindTokens = db.prepare("DELETE FROM email_tokens WHERE user_id = ? AND kind = ?");
 
 export function createEmailToken(userId, kind, tokenHash, expiresAtMs) {
   insertEmailToken.run(tokenHash, userId, kind, expiresAtMs);
@@ -505,7 +516,13 @@ export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
 export function createSession(userId, meta = {}) {
   const token = randomToken();
   const expiresAt = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS;
-  insertSession.run(hashToken(token), userId, expiresAt, meta.ipHash || null, meta.userAgent || null);
+  insertSession.run(
+    hashToken(token),
+    userId,
+    expiresAt,
+    meta.ipHash || null,
+    meta.userAgent || null
+  );
   return token;
 }
 
@@ -548,9 +565,7 @@ const selectTracker = db.prepare(
 const selectTrackersByUser = db.prepare(
   "SELECT provider, external_id, connected_at FROM tracker_accounts WHERE user_id = ?"
 );
-const deleteTracker = db.prepare(
-  "DELETE FROM tracker_accounts WHERE user_id = ? AND provider = ?"
-);
+const deleteTracker = db.prepare("DELETE FROM tracker_accounts WHERE user_id = ? AND provider = ?");
 
 export const saveTrackerAccount = (r) =>
   upsertTracker.run(

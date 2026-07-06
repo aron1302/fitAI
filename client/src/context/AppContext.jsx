@@ -29,6 +29,7 @@ const RECOVERY_PLAN_KEY = "fitai.recoveryPlan";
 const HISTORY_KEY = "fitai.history";
 const MEAL_LOG_KEY = "fitai.mealLog";
 const WORKOUT_LOG_KEY = "fitai.workoutLog";
+const WORKOUT_SESSIONS_KEY = "fitai.workoutSessions";
 const EATEN_MEALS_KEY = "fitai.eatenMeals";
 const CALENDAR_KEY = "fitai.calendar";
 
@@ -92,6 +93,10 @@ export function AppProvider({ children }) {
   // Logged training sets, keyed by date then exercise name; each value is an
   // array of { weight, reps } the user actually performed, for progress tracking.
   const [workoutLog, setWorkoutLog] = useState(() => load(WORKOUT_LOG_KEY, {}));
+  // Timed workout sessions, keyed by `${date}#${planDayIndex}`. Each value is
+  // { startedAt, endedAt? } (epoch ms); endedAt present once the user has
+  // finished, at which point the Log Workout page shows the session summary.
+  const [workoutSessions, setWorkoutSessions] = useState(() => load(WORKOUT_SESSIONS_KEY, {}));
   // Free-form meals the user actually ate (from the "plan as you go" analyser),
   // keyed by date: [{ id, name, calories, protein_g, carbs_g, fat_g, time }].
   const [eatenMeals, setEatenMeals] = useState(() => load(EATEN_MEALS_KEY, {}));
@@ -181,6 +186,7 @@ export function AppProvider({ children }) {
         if (s.history) setHistory(s.history);
         if (s.mealLog) setMealLog(s.mealLog);
         if (s.workoutLog) setWorkoutLog(s.workoutLog);
+        if (s.workoutSessions) setWorkoutSessions(s.workoutSessions);
         if (s.eatenMeals) setEatenMeals(s.eatenMeals);
         if (s.calendar) setCalendar(s.calendar);
       }
@@ -213,6 +219,10 @@ export function AppProvider({ children }) {
   useEffect(() => persist(HISTORY_KEY, "history", history), [history]);
   useEffect(() => persist(MEAL_LOG_KEY, "mealLog", mealLog), [mealLog]);
   useEffect(() => persist(WORKOUT_LOG_KEY, "workoutLog", workoutLog), [workoutLog]);
+  useEffect(
+    () => persist(WORKOUT_SESSIONS_KEY, "workoutSessions", workoutSessions),
+    [workoutSessions]
+  );
   useEffect(() => persist(EATEN_MEALS_KEY, "eatenMeals", eatenMeals), [eatenMeals]);
   useEffect(() => persist(CALENDAR_KEY, "calendar", calendar), [calendar]);
 
@@ -253,6 +263,27 @@ export function AppProvider({ children }) {
       if (sets.length) dayLog[exercise] = sets;
       else delete dayLog[exercise];
       return { ...w, [day]: dayLog };
+    });
+
+  // ---- Timed workout sessions (Log Workout page) ----
+  // Start the timer for a session key if it isn't already running/finished, so
+  // re-mounts and repeat visits keep the original start time.
+  const startWorkoutSession = (key) =>
+    setWorkoutSessions((ws) => (ws[key] ? ws : { ...ws, [key]: { startedAt: Date.now() } }));
+
+  // Stop the timer; the page switches to the session summary.
+  const endWorkoutSession = (key) =>
+    setWorkoutSessions((ws) =>
+      ws[key] && !ws[key].endedAt ? { ...ws, [key]: { ...ws[key], endedAt: Date.now() } } : ws
+    );
+
+  // Un-end a session (e.g. "End workout" tapped too early). The time spent on
+  // the summary screen is excluded by shifting startedAt forward by the gap.
+  const resumeWorkoutSession = (key) =>
+    setWorkoutSessions((ws) => {
+      const s = ws[key];
+      if (!s?.endedAt) return ws;
+      return { ...ws, [key]: { startedAt: s.startedAt + (Date.now() - s.endedAt) } };
     });
 
   // The most recent prior day (before `day`) on which this exercise was logged,
@@ -415,6 +446,10 @@ export function AppProvider({ children }) {
     logSet,
     removeSet,
     lastSession,
+    workoutSessions,
+    startWorkoutSession,
+    endWorkoutSession,
+    resumeWorkoutSession,
     // User-added calendar activities + per-day workout removal.
     calendar,
     addActivity,

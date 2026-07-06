@@ -861,7 +861,9 @@ input[type="range"]:focus-visible::-moz-range-thumb {
   background: none;
   cursor: pointer;
   border-radius: 10px;
-  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease;
 }
 .exdemo-btn:hover {
   transform: scale(1.05);
@@ -2377,6 +2379,114 @@ input[type="range"]:focus-visible::-moz-range-thumb {
   opacity: 0.5;
 }
 
+/* ---------- Workout session (Log Workout page) ---------- */
+/* Sticky timer bar so the elapsed time and "End workout" stay visible while
+   scrolling through the exercise loggers. */
+.session-bar {
+  position: sticky;
+  top: 12px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(11, 15, 23, 0.88);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.session-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.session-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: session-pulse 1.6s ease-in-out infinite;
+  flex: none;
+}
+@keyframes session-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(74, 222, 128, 0);
+  }
+}
+.session-label {
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.session-time {
+  font-size: 20px;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 560px) {
+  .session-label {
+    display: none;
+  }
+}
+
+/* End-workout confirmation dialog. */
+.confirm-modal {
+  width: 100%;
+  max-width: 420px;
+  padding: 26px;
+  text-align: center;
+}
+.confirm-modal h3 {
+  font-size: 18px;
+  margin-bottom: 8px;
+}
+.confirm-modal p {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* Post-workout summary. */
+.session-recap {
+  font-size: 14.5px;
+  line-height: 1.7;
+  color: var(--muted);
+  margin-bottom: 16px;
+}
+.session-recap b {
+  color: var(--text);
+}
+.session-exercises {
+  display: flex;
+  flex-direction: column;
+}
+.session-ex {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.session-ex.skipped {
+  opacity: 0.55;
+}
+.session-ex-sets {
+  font-size: 13.5px;
+  text-align: right;
+}
+
 /* ---------- Email verification banner ---------- */
 .verify-banner {
   display: flex;
@@ -2486,6 +2596,11 @@ input[type="range"]:focus-visible::-moz-range-thumb {
   }
   .activity-form input {
     min-width: 120px;
+  }
+
+  /* Stick the session bar just below the mobile top bar. */
+  .session-bar {
+    top: calc(52px + env(safe-area-inset-top));
   }
 
   /* Lift the cookie notice above the fixed bottom tab bar. */
