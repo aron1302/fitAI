@@ -286,6 +286,11 @@ export function AppProvider({ children }) {
       return { ...ws, [key]: { startedAt: s.startedAt + (Date.now() - s.endedAt) } };
     });
 
+  // True once the timed session for a plan day (default: today) has been ended.
+  // Drives "Log workout" buttons flipping to "View workout" across the app.
+  const sessionCompleted = (dayIndex, day = dateKey()) =>
+    !!workoutSessions[`${day}#${dayIndex}`]?.endedAt;
+
   // The most recent prior day (before `day`) on which this exercise was logged,
   // returned as { date, sets } — used to show last-session numbers for progress.
   const lastSession = (exercise, day = dateKey()) => {
@@ -450,6 +455,7 @@ export function AppProvider({ children }) {
     startWorkoutSession,
     endWorkoutSession,
     resumeWorkoutSession,
+    sessionCompleted,
     // User-added calendar activities + per-day workout removal.
     calendar,
     addActivity,

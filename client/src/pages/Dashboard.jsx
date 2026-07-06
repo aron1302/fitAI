@@ -59,7 +59,11 @@ function UpcomingStrip({ workoutPlan, trainingDays, calendar, profile }) {
       </div>
       <div className="up-strip">
         {days.map(({ key, date, workout, activities, extra }, i) => (
-          <Link key={key} to={`/calendar?date=${key}`} className={`up-day${i === 0 ? " today" : ""}`}>
+          <Link
+            key={key}
+            to={`/calendar?date=${key}`}
+            className={`up-day${i === 0 ? " today" : ""}`}
+          >
             <span className="up-dow">{dow(date, i)}</span>
             <span className="up-date">
               {date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}
@@ -181,8 +185,17 @@ const BAND_COLOR = {
 };
 
 export default function Dashboard() {
-  const { profile, recovery, readiness, log, workoutPlan, activity, workoutLog, calendar } =
-    useApp();
+  const {
+    profile,
+    recovery,
+    readiness,
+    log,
+    workoutPlan,
+    activity,
+    workoutLog,
+    calendar,
+    sessionCompleted,
+  } = useApp();
   const act = todayActivity(profile, log, activity);
   // Exercise whose cross-session history modal is open (null = closed), plus
   // the set of names that have any logged sets at all — only those get a
@@ -409,11 +422,16 @@ export default function Dashboard() {
             <Link to="/workout">
               <button className="btn">View workout plan →</button>
             </Link>
-            {todayIdx >= 0 && (
-              <Link to={`/workout/log/${todayIdx}`}>
-                <button className="btn ghost">✎ Log today's workout</button>
-              </Link>
-            )}
+            {todayIdx >= 0 &&
+              (sessionCompleted(todayIdx) ? (
+                <Link to={`/workout/log/${todayIdx}`}>
+                  <button className="btn ghost done">✓ View today's workout</button>
+                </Link>
+              ) : (
+                <Link to={`/workout/log/${todayIdx}`}>
+                  <button className="btn ghost">✎ Log today's workout</button>
+                </Link>
+              ))}
           </div>
           {hxExercise && (
             <ExerciseHistory

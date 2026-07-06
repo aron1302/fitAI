@@ -34,7 +34,11 @@ function normalizeDays(days) {
 
 // Read-only card for one training day: day/focus header, intensity pill,
 // "Log workout" link, a per-day edit button, and the exercise list with demos.
+// Once today's timed session for this day has been ended, the log link flips
+// to "View workout" and leads to the post-workout stats & summary.
 function DayView({ day, dayIndex, onEditDay }) {
+  const { sessionCompleted } = useApp();
+  const done = dayIndex >= 0 && sessionCompleted(dayIndex);
   return (
     <div className="card day-card">
       <div className="day-head">
@@ -49,8 +53,8 @@ function DayView({ day, dayIndex, onEditDay }) {
             {day.intensity} · {day.duration_min} min
           </span>
           {dayIndex >= 0 && (
-            <Link className="btn ghost sm" to={`/workout/log/${dayIndex}`}>
-              Log workout
+            <Link className={`btn ghost sm${done ? " done" : ""}`} to={`/workout/log/${dayIndex}`}>
+              {done ? "✓ View workout" : "Log workout"}
             </Link>
           )}
           {onEditDay && (
@@ -319,7 +323,8 @@ export default function Workout() {
       {editing && (
         <div className="edit-bar">
           <span style={{ fontWeight: 700 }}>
-            ✎ {editScope === "all" ? "Editing plan" : `Editing ${view.days[editScope]?.day || "day"}`}
+            ✎{" "}
+            {editScope === "all" ? "Editing plan" : `Editing ${view.days[editScope]?.day || "day"}`}
           </span>
           <span className="muted" style={{ fontSize: 13 }}>
             Make your changes, then save.
@@ -404,7 +409,8 @@ export default function Workout() {
               <p>There aren&apos;t any workouts scheduled for today — it&apos;s a rest day.</p>
               {todayExtra && todayExtra.type !== "recovery" && (
                 <p className="muted" style={{ fontSize: 14, marginTop: 6 }}>
-                  On the programme instead: <b style={{ color: "var(--text)" }}>{todayExtra.title}</b>
+                  On the programme instead:{" "}
+                  <b style={{ color: "var(--text)" }}>{todayExtra.title}</b>
                   {todayExtra.duration_min ? ` · ${todayExtra.duration_min} min` : ""}
                   {readiness < 40 ? " — readiness is low, keep it very easy today." : ""}
                 </p>
@@ -418,7 +424,10 @@ export default function Workout() {
                 <button className="btn ghost" onClick={() => setWeek(true)}>
                   View full week
                 </button>
-                <Link className={todayExtra && todayExtra.type !== "recovery" ? "btn ghost" : "btn"} to="/calendar">
+                <Link
+                  className={todayExtra && todayExtra.type !== "recovery" ? "btn ghost" : "btn"}
+                  to="/calendar"
+                >
                   Add one from the calendar
                 </Link>
               </div>

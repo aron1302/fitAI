@@ -261,13 +261,16 @@ export default function LogWorkout() {
           <Link className="btn" to="/">
             Done — back to dashboard
           </Link>
-          <button
-            type="button"
-            className="btn ghost"
-            onClick={() => resumeWorkoutSession(sessionKey)}
-          >
-            ↩ Resume workout
-          </button>
+          {/* Resuming only makes sense while it's still the session's day. */}
+          {isToday && (
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={() => resumeWorkoutSession(sessionKey)}
+            >
+              ↩ Resume workout
+            </button>
+          )}
         </div>
       </>
     );

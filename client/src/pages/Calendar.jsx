@@ -81,8 +81,11 @@ function WorkoutView({ plan }) {
 // Read-only render of a single scheduled training day (one day of the plan).
 // `dayIndex` is its position in workoutPlan.days; `logDate` / `canLog` drive the
 // "Log workout" link, which is offered for today or past days (you log what you
-// actually did).
+// actually did). Once the timed session for this date has been ended, the link
+// flips to "View workout" and opens the post-workout stats & summary.
 function ScheduledDayView({ day, dayIndex, upcoming, added, logDate, canLog, onRemove }) {
+  const { sessionCompleted } = useApp();
+  const completed = dayIndex >= 0 && sessionCompleted(dayIndex, logDate);
   return (
     <div className="card" style={{ marginBottom: 18 }}>
       <div className="card-title-row">
@@ -90,8 +93,8 @@ function ScheduledDayView({ day, dayIndex, upcoming, added, logDate, canLog, onR
           🏋 {day.focus || day.day}
           {day.day && day.focus && day.day !== day.focus ? ` — ${day.day}` : ""}
         </h3>
-        <span className={`pill ${day.intensity || "moderate"}`}>
-          {added ? "Added by you" : upcoming ? "Upcoming" : "Scheduled"}
+        <span className={`pill ${completed ? "done" : day.intensity || "moderate"}`}>
+          {completed ? "✓ Completed" : added ? "Added by you" : upcoming ? "Upcoming" : "Scheduled"}
           {day.duration_min ? ` · ${day.duration_min} min` : ""}
         </span>
       </div>
@@ -120,10 +123,17 @@ function ScheduledDayView({ day, dayIndex, upcoming, added, logDate, canLog, onR
         <Link to="/workout" className="btn ghost sm">
           Open in Workout →
         </Link>
-        {canLog && dayIndex >= 0 && (
-          <Link to={`/workout/log/${dayIndex}?date=${logDate}`} className="btn sm">
-            ✎ Log workout
+        {completed ? (
+          <Link to={`/workout/log/${dayIndex}?date=${logDate}`} className="btn ghost sm done">
+            ✓ View workout
           </Link>
+        ) : (
+          canLog &&
+          dayIndex >= 0 && (
+            <Link to={`/workout/log/${dayIndex}?date=${logDate}`} className="btn sm">
+              ✎ Log workout
+            </Link>
+          )
         )}
         {onRemove && (
           <button className="btn ghost sm danger" onClick={onRemove}>
@@ -270,7 +280,10 @@ function LoggedWorkoutCard({ date, dayLog }) {
       </div>
       {entries.map(([name, sets]) => (
         <div key={name} className="hx-ex">
-          <div className="row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+          <div
+            className="row"
+            style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}
+          >
             <span className="ex-name">{name}</span>
             <span className="row" style={{ gap: 10, alignItems: "baseline" }}>
               {volume(sets) > 0 && (
@@ -471,9 +484,8 @@ export default function Calendar() {
   const scheduledDay = hideWorkout ? null : scheduledRaw;
   const scheduledIdx = scheduledDay ? workoutPlan.days.indexOf(scheduledDay) : -1;
   // A plan session the user placed on this (otherwise rest) day.
-  const addedIdx = !scheduledRaw && Number.isInteger(calEntry?.addWorkoutIdx)
-    ? calEntry.addWorkoutIdx
-    : null;
+  const addedIdx =
+    !scheduledRaw && Number.isInteger(calEntry?.addWorkoutIdx) ? calEntry.addWorkoutIdx : null;
   const addedDay = addedIdx !== null ? workoutPlan?.days?.[addedIdx] || null : null;
   const isUpcoming = selected >= todayKey;
   // Sets actually recorded on the selected date, shown as their own card.
@@ -591,7 +603,9 @@ export default function Calendar() {
                 {(e?.diet || logged || (sched && e?.workout)) && (
                   <span className="cal-dots">
                     {logged && <span className="cal-dot lg" title="Sets logged" />}
-                    {sched && e?.workout && <span className="cal-dot wk" title="Logged workout plan" />}
+                    {sched && e?.workout && (
+                      <span className="cal-dot wk" title="Logged workout plan" />
+                    )}
                     {e?.diet && <span className="cal-dot dt" title="Meal plan" />}
                   </span>
                 )}

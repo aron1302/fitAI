@@ -2456,6 +2456,24 @@ input[type="range"]:focus-visible::-moz-range-thumb {
   line-height: 1.6;
 }
 
+/* "Completed" state for log-workout links & pills: once today's session has
+   been ended, the buttons flip to a green-tinted "View workout" that opens the
+   post-workout stats & summary. */
+.btn.done {
+  background: rgba(74, 222, 128, 0.1);
+  border-color: rgba(74, 222, 128, 0.45);
+  color: var(--accent);
+}
+.btn.done:hover {
+  background: rgba(74, 222, 128, 0.18);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.pill.done {
+  background: rgba(74, 222, 128, 0.14);
+  color: var(--accent);
+}
+
 /* Post-workout summary. */
 .session-recap {
   font-size: 14.5px;
