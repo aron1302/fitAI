@@ -1298,6 +1298,21 @@ input[type="range"]:focus-visible::-moz-range-thumb {
   border-radius: 10px;
   border: 1px solid var(--border);
 }
+/* Attachment chip shown when the photo can't be thumbnailed (HEIC/HEIF). */
+.pag-photo-chip {
+  align-items: center;
+}
+.pag-photo-chip-label {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--bg-2);
+  border: 1px solid var(--accent-2);
+  border-radius: 10px;
+}
 .pag-photo-x {
   position: absolute;
   top: -7px;

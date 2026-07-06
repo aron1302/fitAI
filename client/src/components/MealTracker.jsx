@@ -126,8 +126,14 @@ export default function MealTracker({ planEaten = [] }) {
         />
         <div className="row" style={{ gap: 10, marginTop: 10, flexWrap: "wrap" }}>
           {photo ? (
-            <span className="pag-photo">
-              <img src={photo.previewUrl} alt="Meal to analyse" />
+            // HEIC camera shots are sent as-is (the browser can't render a
+            // thumbnail for them), so fall back to a generic attachment chip.
+            <span className={photo.previewUrl ? "pag-photo" : "pag-photo pag-photo-chip"}>
+              {photo.previewUrl ? (
+                <img src={photo.previewUrl} alt="Meal to analyse" />
+              ) : (
+                <span className="pag-photo-chip-label">📷 Photo attached</span>
+              )}
               <button
                 type="button"
                 className="pag-photo-x"

@@ -97,8 +97,13 @@ export const DIET_SYSTEM =
 export const MEAL_ANALYZE_SYSTEM =
   "You are a meticulous sports nutritionist inside a fitness app. The user reports a meal they ACTUALLY ate, as a short " +
   "text description and/or a photo. Identify the foods (from the photo too, if attached) and estimate the meal's " +
-  "nutrition using realistic default portion sizes for anything unspecified. Be honest about uncertainty: set " +
-  "confidence to low/medium/high and state your key portion assumptions in one short sentence. " +
+  "nutrition. Ground every estimate in standard nutrition-database values for the identified foods. Size portions from " +
+  "visual scale cues in the photo (plate diameter, cutlery, hands, packaging) — count discrete items rather than " +
+  "eyeballing totals — and use realistic default portions only for what genuinely can't be seen or wasn't specified. " +
+  "Be honest about uncertainty: set confidence to low/medium/high and state your key portion assumptions in one short " +
+  "sentence. NEVER invent foods you cannot actually identify: if the photo is too blurry, dark, obstructed, or does " +
+  'not show food, and the text description doesn\'t fill the gap, respond with only {"error": "<one short, friendly ' +
+  'sentence saying what you couldn\'t make out>"} instead of guessing. ' +
   "For guidance: compare the day so far (this meal plus anything already eaten) against the user's daily targets and " +
   "give 2-3 specific, actionable sentences on how to proceed with the REST of today — what to prioritise or ease up on " +
   "at the next meals. Be encouraging and non-judgemental; never shame, never give medical advice.";
@@ -116,7 +121,11 @@ export const MEAL_ANALYZE_SHAPE = `Return ONLY a JSON object with exactly this s
     "assumptions": string
   },
   "guidance": string
-}`;
+}
+
+EXCEPTION — if you cannot identify any food with reasonable confidence (unreadable/blurry/dark photo, no food visible, and no usable text description), return ONLY:
+{ "error": string }
+where error is one short, friendly sentence saying what you couldn't make out (e.g. "The photo is too dark to identify the food"). Do not include advice in it; the app adds that.`;
 
 // Builds the user prompt. All inputs are client-supplied, so numbers are
 // coerced and strings are length-capped before they reach the model.
@@ -222,7 +231,9 @@ export function classifyUser(message, hasWorkout, hasDiet, recentContext = "") {
 export function recentTurns(messages, n = 6) {
   return (messages || [])
     .slice(-n)
-    .map((m) => `${m.role === "assistant" ? "Coach" : "Client"}: ${String(m.content).slice(0, 800)}`)
+    .map(
+      (m) => `${m.role === "assistant" ? "Coach" : "Client"}: ${String(m.content).slice(0, 800)}`
+    )
     .join("\n");
 }
 

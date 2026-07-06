@@ -195,15 +195,22 @@ const mealAnalysisSchema = {
       ],
     },
     guidance: { type: "string" },
+    // Escape hatch: when the food can't be identified (unreadable photo, no
+    // usable description) the model sets `error` alone instead of guessing
+    // macros. Nothing is required at the top level so it can pick either
+    // shape; the endpoint checks `error` before validating meal+guidance.
+    error: { type: "string" },
   },
-  required: ["meal", "guidance"],
+  required: [],
 };
 
 // Estimate the nutrition of a meal the user actually ate, from a text
 // description and/or a photo ({ mimeType, data } base64), plus rest-of-day
 // guidance against their targets.
 export async function aiAnalyzeMeal({ description, image, profile, targets, eatenToday }) {
-  const content = [{ type: "text", text: mealAnalyzeUser(description, profile, targets, eatenToday) }];
+  const content = [
+    { type: "text", text: mealAnalyzeUser(description, profile, targets, eatenToday) },
+  ];
   if (image) {
     content.push({
       type: "image",

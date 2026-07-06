@@ -339,9 +339,7 @@ app.get("/api/trackers", requireAuth, (req, res) => {
         available: fitbitEnabled(),
         connected: connected.has(FITBIT),
         connectedAt: connected.get(FITBIT)?.connected_at ?? null,
-        note: fitbitEnabled()
-          ? null
-          : "Server is missing FITBIT_CLIENT_ID / FITBIT_CLIENT_SECRET.",
+        note: fitbitEnabled() ? null : "Server is missing FITBIT_CLIENT_ID / FITBIT_CLIENT_SECRET.",
       },
       garmin: {
         available: false,
@@ -562,7 +560,10 @@ app.post("/api/suggest-edit", requireAuth, aiLimiter, async (req, res) => {
 // AI's macro estimate and rest-of-day guidance. Needs a vision-capable cloud
 // provider; reports { ok:false, reason } (not an error) when unavailable so
 // the UI can explain gracefully.
-const MEAL_IMAGE_MIME_RE = /^image\/(jpeg|png|webp)$/;
+// HEIC/HEIF pass through untouched (browsers can't re-encode them but the
+// vision models read them natively); everything else arrives as the client
+// downscaler's JPEG.
+const MEAL_IMAGE_MIME_RE = /^image\/(jpeg|png|webp|heic|heif)$/;
 const BASE64_RE = /^[A-Za-z0-9+/=]+$/;
 
 app.post("/api/meal-analyze", requireAuth, aiLimiter, async (req, res) => {
@@ -574,15 +575,14 @@ app.post("/api/meal-analyze", requireAuth, aiLimiter, async (req, res) => {
     const mimeType = String(image.mimeType || "");
     const data = String(image.data || "");
     if (!MEAL_IMAGE_MIME_RE.test(mimeType))
-      return res.status(400).json({ error: "photo must be a JPEG, PNG, or WebP image" });
+      return res.status(400).json({ error: "photo must be a JPEG, PNG, WebP, or HEIC image" });
     // ~4M base64 chars ≈ 3 MB of image — far above what the client's
     // downscaler produces, so anything bigger is malformed or abusive.
     if (!data || data.length > 4_000_000 || !BASE64_RE.test(data))
       return res.status(400).json({ error: "photo data is missing, malformed, or too large" });
     img = { mimeType, data };
   }
-  if (!desc && !img)
-    return res.status(400).json({ error: "describe the meal or attach a photo" });
+  if (!desc && !img) return res.status(400).json({ error: "describe the meal or attach a photo" });
 
   const prof = check(ProfileSchema, profile || {});
   if (!prof.ok) return res.status(400).json({ error: `invalid profile — ${prof.error}` });
@@ -597,16 +597,25 @@ app.post("/api/meal-analyze", requireAuth, aiLimiter, async (req, res) => {
     });
   }
   try {
-    const result = MealAnalysisSchema.parse(
-      await analyze({ description: desc, image: img, profile: prof.data, targets, eatenToday })
-    );
+    const raw = await analyze({ description: desc, image: img, profile: prof.data, targets, eatenToday });
+    // The model is told NOT to guess when it can't identify the food — it
+    // returns { error } instead of fabricated numbers. Relay that as a
+    // friendly ok:false so the UI can steer the user to retry or describe.
+    if (raw && typeof raw.error === "string" && !raw.meal) {
+      const why = raw.error.trim().slice(0, 240).replace(/[.!?]?$/, ".");
+      return res.json({
+        ok: false,
+        reason: `${why} Try a clearer, well-lit photo — or just type what you ate in the box above.`,
+      });
+    }
+    const result = MealAnalysisSchema.parse(raw);
     return res.json({ ok: true, meal: result.meal, guidance: result.guidance, _engine: p });
   } catch (err) {
     console.error(`${p} meal-analyze failed/invalid:`, err.message);
     return res.json({
       ok: false,
       reason:
-        "Sorry, I couldn't read that meal. Try a clearer photo or a short description like \"2 eggs, toast with butter, and a glass of orange juice\".",
+        'Sorry, I couldn\'t read that meal. Try a clearer photo or a short description like "2 eggs, toast with butter, and a glass of orange juice".',
     });
   }
 });
