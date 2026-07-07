@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useApp, dateKey } from "../context/AppContext.jsx";
+import { getDaySets } from "../lib/workoutLog.js";
 import ExerciseHistory from "./ExerciseHistory.jsx";
 
 // Per-exercise set logger shown under each exercise on the Log Workout page.
@@ -13,7 +14,7 @@ export default function WorkoutLogger({ exercise, day = dateKey() }) {
   const [reps, setReps] = useState("");
   const [showHistory, setShowHistory] = useState(false);
 
-  const sets = workoutLog[day]?.[exercise] || [];
+  const sets = getDaySets(workoutLog, day, exercise);
   const last = lastSession(exercise, day);
   const hasHistory = sets.length > 0 || !!last;
   const volume = sets.reduce((sum, s) => sum + (s.weight || 0) * (s.reps || 0), 0);
@@ -55,7 +56,11 @@ export default function WorkoutLogger({ exercise, day = dateKey() }) {
         </span>
       </div>
       {showHistory && (
-        <ExerciseHistory exercise={exercise} baselineDay={day} onClose={() => setShowHistory(false)} />
+        <ExerciseHistory
+          exercise={exercise}
+          baselineDay={day}
+          onClose={() => setShowHistory(false)}
+        />
       )}
 
       {sets.length > 0 && (

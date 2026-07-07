@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useSearchParams, Link } from "react-router-dom";
 import { useApp, dateKey } from "../context/AppContext.jsx";
 import { workoutCalories } from "../lib/calc.js";
+import { getDaySets } from "../lib/workoutLog.js";
 import WorkoutLogger from "../components/WorkoutLogger.jsx";
 import ExerciseDemo from "../components/ExerciseDemo.jsx";
 
@@ -124,9 +125,8 @@ export default function LogWorkout() {
   }
 
   // Session stats, computed live from the day's logged sets.
-  const dayLog = workoutLog[logDate] || {};
   const perExercise = day.exercises.map((ex, j) => {
-    const sets = dayLog[logKeys[j]] || [];
+    const sets = getDaySets(workoutLog, logDate, logKeys[j]);
     return {
       name: ex.name,
       scheme: `${ex.sets} × ${ex.reps}`,

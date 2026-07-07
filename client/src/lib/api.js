@@ -187,7 +187,10 @@ export async function verifyEmailToken(token) {
 
 // Re-send the verification email to the logged-in user.
 export async function resendVerification() {
-  const r = await fetch("/api/auth/resend-verification", { method: "POST", headers: jsonHeaders() });
+  const r = await fetch("/api/auth/resend-verification", {
+    method: "POST",
+    headers: jsonHeaders(),
+  });
   if (!r.ok) throw new Error("Could not resend the verification email");
 }
 
@@ -240,18 +243,16 @@ export async function fetchState() {
   }
 }
 
-// Persist a single state key. Best-effort: errors are swallowed so a flaky
-// network never breaks the UI (the local cache still holds the value).
+// Persist a single state key. Resolves only once the server has confirmed the
+// write; rejects on network failure or a non-2xx response so the sync queue
+// (lib/sync.js) knows the value is not safely stored yet and keeps retrying.
 export async function saveState(key, value) {
-  try {
-    await fetch(`/api/state/${key}`, {
-      method: "PUT",
-      headers: jsonHeaders(),
-      body: JSON.stringify({ value }),
-    });
-  } catch {
-    // ignore — cached locally regardless
-  }
+  const r = await fetch(`/api/state/${key}`, {
+    method: "PUT",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ value }),
+  });
+  if (!r.ok) throw new Error(`saving ${key} failed (${r.status})`);
 }
 
 // Resolve an exercise name to a real animated demo via the server (ExerciseDB).

@@ -5,6 +5,7 @@ import { useAuth } from "./context/AuthContext.jsx";
 import { useApp } from "./context/AppContext.jsx";
 import { NAV_ICONS } from "./components/NavIcons.jsx";
 import VerifyBanner from "./components/VerifyBanner.jsx";
+import SyncBadge from "./components/SyncBadge.jsx";
 
 const NAV = [
   { to: "/", icon: "dashboard", label: "Dashboard", short: "Home", end: true },
@@ -143,6 +144,7 @@ export default function App() {
           ))}
         </nav>
         <div className="nav-spacer" />
+        <SyncBadge />
         <UserBox user={user} logout={logout} />
         <AiBadge status={status} />
       </aside>
@@ -157,9 +159,12 @@ export default function App() {
             </b>
           </div>
         </Link>
-        <span className="topbar-ai" title={aiLabel(status)}>
-          <span className={`dot ${status.ai ? "on" : "off"}`} />
-          <span className="topbar-ai-label">{aiLabel(status)}</span>
+        <span className="row" style={{ gap: 10, alignItems: "center" }}>
+          <SyncBadge />
+          <span className="topbar-ai" title={aiLabel(status)}>
+            <span className={`dot ${status.ai ? "on" : "off"}`} />
+            <span className="topbar-ai-label">{aiLabel(status)}</span>
+          </span>
         </span>
       </header>
 

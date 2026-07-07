@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useApp } from "../context/AppContext.jsx";
+import { exerciseSessions } from "../lib/workoutLog.js";
 
 // Compact date for a YYYY-MM-DD key, with the year only when it differs from
 // the current one ("Jun 28" / "Dec 30, 2025").
@@ -44,19 +45,15 @@ export default function ExerciseHistory({ exercise, baselineDay, onClose }) {
     };
   }, [onClose]);
 
-  // Oldest → newest to compute each session's change, then newest first to read.
-  const sessions = Object.keys(workoutLog)
-    .filter((d) => workoutLog[d]?.[exercise]?.length)
-    .sort()
-    .map((date) => {
-      const sets = workoutLog[date][exercise];
-      return {
-        date,
-        sets,
-        top: Math.max(0, ...sets.map((s) => s.weight || 0)),
-        volume: sets.reduce((sum, s) => sum + (s.weight || 0) * (s.reps || 0), 0),
-      };
-    });
+  // Oldest → newest to compute each session's change, then newest first to
+  // read. Sessions are matched by normalised name, so a plan edit that renamed
+  // the exercise ("Preacher Curls" → "Preacher curls") doesn't hide history.
+  const sessions = exerciseSessions(workoutLog, exercise).map(({ date, sets }) => ({
+    date,
+    sets,
+    top: Math.max(0, ...sets.map((s) => s.weight || 0)),
+    volume: sets.reduce((sum, s) => sum + (s.weight || 0) * (s.reps || 0), 0),
+  }));
   sessions.forEach((s, i) => {
     s.dTop = i > 0 ? s.top - sessions[i - 1].top : null;
     s.dVol = i > 0 ? s.volume - sessions[i - 1].volume : null;

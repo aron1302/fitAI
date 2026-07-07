@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useApp, dateKey } from "../context/AppContext.jsx";
+import { normalizeExercise } from "../lib/workoutLog.js";
 import { STAT_ICONS } from "../components/NavIcons.jsx";
 import ExerciseHistory from "../components/ExerciseHistory.jsx";
 import {
@@ -201,7 +202,9 @@ export default function Dashboard() {
   // the set of names that have any logged sets at all — only those get a
   // History button.
   const [hxExercise, setHxExercise] = useState(null);
-  const loggedNames = new Set(Object.values(workoutLog).flatMap((d) => Object.keys(d)));
+  const loggedNames = new Set(
+    Object.values(workoutLog).flatMap((d) => Object.keys(d).map(normalizeExercise))
+  );
   // Label real device data vs the built-in estimate, so testers know which is which.
   const sourceLabel = act.source
     ? `From ${act.source === "fitbit" ? "Fitbit" : act.source}`
@@ -402,7 +405,7 @@ export default function Dashboard() {
                       <span className="ex-scheme">
                         {ex.sets} × {ex.reps}
                       </span>
-                      {loggedNames.has(ex.name) && (
+                      {loggedNames.has(normalizeExercise(ex.name)) && (
                         <button
                           type="button"
                           className="btn ghost sm"

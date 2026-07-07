@@ -272,6 +272,36 @@ textarea:focus {
   background: var(--warn);
 }
 
+/* Save-queue status pill (components/SyncBadge.jsx): visible only while
+   changes are still waiting for the server to confirm them. */
+.sync-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 11px;
+  white-space: nowrap;
+}
+.sync-badge .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.sync-badge.warn {
+  color: var(--warn);
+  border-color: rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.08);
+}
+.sidebar .sync-badge {
+  margin-bottom: 10px;
+  align-self: flex-start;
+}
+
 .main {
   flex: 1;
   min-width: 0;

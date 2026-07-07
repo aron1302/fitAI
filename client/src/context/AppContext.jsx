@@ -2,7 +2,6 @@ import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { readinessScore } from "../lib/calc.js";
 import {
   fetchState,
-  saveState,
   fetchWorkoutPlan,
   fetchDietPlan,
   fetchRecoveryPlan,
@@ -12,6 +11,8 @@ import {
   fetchActivity,
   syncFitbit,
 } from "../lib/api.js";
+import { enqueueSave, releaseSaves, unsyncedKeys, clearUnsynced } from "../lib/sync.js";
+import { findExerciseKey, exerciseSessions, mergeWorkoutLogs } from "../lib/workoutLog.js";
 
 // Opening message from the AI coach.
 const coachGreeting = (name) =>
@@ -32,6 +33,23 @@ const WORKOUT_LOG_KEY = "fitai.workoutLog";
 const WORKOUT_SESSIONS_KEY = "fitai.workoutSessions";
 const EATEN_MEALS_KEY = "fitai.eatenMeals";
 const CALENDAR_KEY = "fitai.calendar";
+
+// Server state key → its localStorage cache key, for re-sending values the
+// server never confirmed (see the unsynced handling in the hydration effect).
+const LS_BY_SERVER_KEY = {
+  profile: PROFILE_KEY,
+  recovery: RECOVERY_KEY,
+  log: LOG_KEY,
+  workoutPlan: WORKOUT_PLAN_KEY,
+  dietPlan: DIET_PLAN_KEY,
+  recoveryPlan: RECOVERY_PLAN_KEY,
+  history: HISTORY_KEY,
+  mealLog: MEAL_LOG_KEY,
+  workoutLog: WORKOUT_LOG_KEY,
+  workoutSessions: WORKOUT_SESSIONS_KEY,
+  eatenMeals: EATEN_MEALS_KEY,
+  calendar: CALENDAR_KEY,
+};
 
 // Short unique id for a user-added calendar activity.
 const newId = () =>
@@ -75,6 +93,37 @@ function load(key, fallback) {
   } catch {
     return fallback;
   }
+}
+
+// The cached value exactly as stored (no fallback merge), or null.
+function loadRaw(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+// Persist one state slice whenever it changes: to localStorage immediately
+// (instant reload / offline cache) and to the server through the reliable
+// save queue. Guarded by reference identity, not "first run": the mount
+// render (and StrictMode's dev-mode re-run of it) sees the value just loaded
+// from that same cache — nothing changed, and queueing it would falsely mark
+// every key as ahead of the server on every boot.
+function usePersist(lsKey, serverKey, value) {
+  const prev = useRef(value);
+  useEffect(() => {
+    if (prev.current === value) return;
+    prev.current = value;
+    if (value == null) return; // plans start as null — never store that
+    try {
+      localStorage.setItem(lsKey, JSON.stringify(value));
+    } catch {
+      // storage unavailable — the queued server save below still runs
+    }
+    enqueueSave(serverKey, value);
+  }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 export function AppProvider({ children }) {
@@ -164,67 +213,77 @@ export function AppProvider({ children }) {
     return row;
   };
 
-  // The server is the source of truth; localStorage is only an instant-load
-  // cache / offline fallback. `hydrated` gates server writes so the initial
-  // cached values don't overwrite freshly-loaded server data on boot.
-  const hydrated = useRef(false);
-  // Same fact as state, for consumers that must wait for the server's answer
-  // (e.g. first-login onboarding shouldn't fire off the default profile).
+  // The server is normally the source of truth and localStorage an
+  // instant-load cache — EXCEPT for keys the sync queue has flagged as
+  // unsynced, where the local cache holds confirmed-newer data the server
+  // never received. `stateLoaded` flips once this reconciliation has run, for
+  // consumers that must wait for the server's answer (e.g. first-login
+  // onboarding shouldn't fire off the default profile).
   const [stateLoaded, setStateLoaded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     fetchState().then((s) => {
       if (cancelled) return;
+      // Keys whose latest local value the server never confirmed receiving —
+      // saves that failed on a flaky connection, or edits made while a
+      // previous boot was still hydrating. For those the local cache is AHEAD
+      // of the server: applying the server copy over it would destroy data
+      // (a whole gym session, in the worst case). Local wins; the workout log
+      // — where both sides may hold real sessions — is deep-merged.
+      const unsynced = unsyncedKeys();
+      const apply = (key, applyServer) => {
+        if (s[key] != null && !unsynced.has(key)) applyServer(s[key]);
+      };
       if (s) {
-        if (s.profile) setProfile((p) => ({ ...p, ...s.profile }));
-        if (s.recovery) setRecovery((r) => ({ ...r, ...s.recovery }));
-        if (s.log) setLog(s.log);
-        if (s.workoutPlan) setWorkoutPlan(s.workoutPlan);
-        if (s.dietPlan) setDietPlan(s.dietPlan);
-        if (s.recoveryPlan) setRecoveryPlan(s.recoveryPlan);
-        if (s.history) setHistory(s.history);
-        if (s.mealLog) setMealLog(s.mealLog);
-        if (s.workoutLog) setWorkoutLog(s.workoutLog);
-        if (s.workoutSessions) setWorkoutSessions(s.workoutSessions);
-        if (s.eatenMeals) setEatenMeals(s.eatenMeals);
-        if (s.calendar) setCalendar(s.calendar);
+        apply("profile", (v) => setProfile((p) => ({ ...p, ...v })));
+        apply("recovery", (v) => setRecovery((r) => ({ ...r, ...v })));
+        apply("log", setLog);
+        apply("workoutPlan", setWorkoutPlan);
+        apply("dietPlan", setDietPlan);
+        apply("recoveryPlan", setRecoveryPlan);
+        apply("history", setHistory);
+        apply("mealLog", setMealLog);
+        if (s.workoutLog) {
+          setWorkoutLog((local) =>
+            unsynced.has("workoutLog") ? mergeWorkoutLogs(s.workoutLog, local) : s.workoutLog
+          );
+        }
+        apply("workoutSessions", setWorkoutSessions);
+        apply("eatenMeals", setEatenMeals);
+        apply("calendar", setCalendar);
       }
-      hydrated.current = true;
       setStateLoaded(true);
+      // Re-send everything the server is still missing. The merged workout
+      // log is queued by its persist effect (the merge changes state), so it
+      // is skipped here to avoid briefly pushing the pre-merge local copy.
+      for (const key of unsynced) {
+        if (key === "workoutLog" && s?.workoutLog) continue;
+        const value = loadRaw(LS_BY_SERVER_KEY[key]);
+        if (value != null) enqueueSave(key, value);
+        else clearUnsynced(key); // stale flag with no cached value behind it
+      }
+      // Only now may queued saves reach the server: hydration has reconciled
+      // local and server state, so nothing stale can overwrite newer data.
+      releaseSaves();
     });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  // Write a value to the local cache always, and to the server once hydrated.
-  const persist = (lsKey, serverKey, value) => {
-    localStorage.setItem(lsKey, JSON.stringify(value));
-    if (hydrated.current) saveState(serverKey, value);
-  };
-
-  useEffect(() => persist(PROFILE_KEY, "profile", profile), [profile]);
-  useEffect(() => persist(RECOVERY_KEY, "recovery", recovery), [recovery]);
-  useEffect(() => persist(LOG_KEY, "log", log), [log]);
-  useEffect(() => {
-    if (workoutPlan) persist(WORKOUT_PLAN_KEY, "workoutPlan", workoutPlan);
-  }, [workoutPlan]);
-  useEffect(() => {
-    if (dietPlan) persist(DIET_PLAN_KEY, "dietPlan", dietPlan);
-  }, [dietPlan]);
-  useEffect(() => {
-    if (recoveryPlan) persist(RECOVERY_PLAN_KEY, "recoveryPlan", recoveryPlan);
-  }, [recoveryPlan]);
-  useEffect(() => persist(HISTORY_KEY, "history", history), [history]);
-  useEffect(() => persist(MEAL_LOG_KEY, "mealLog", mealLog), [mealLog]);
-  useEffect(() => persist(WORKOUT_LOG_KEY, "workoutLog", workoutLog), [workoutLog]);
-  useEffect(
-    () => persist(WORKOUT_SESSIONS_KEY, "workoutSessions", workoutSessions),
-    [workoutSessions]
-  );
-  useEffect(() => persist(EATEN_MEALS_KEY, "eatenMeals", eatenMeals), [eatenMeals]);
-  useEffect(() => persist(CALENDAR_KEY, "calendar", calendar), [calendar]);
+  usePersist(PROFILE_KEY, "profile", profile);
+  usePersist(RECOVERY_KEY, "recovery", recovery);
+  usePersist(LOG_KEY, "log", log);
+  usePersist(WORKOUT_PLAN_KEY, "workoutPlan", workoutPlan);
+  usePersist(DIET_PLAN_KEY, "dietPlan", dietPlan);
+  usePersist(RECOVERY_PLAN_KEY, "recoveryPlan", recoveryPlan);
+  usePersist(HISTORY_KEY, "history", history);
+  usePersist(MEAL_LOG_KEY, "mealLog", mealLog);
+  usePersist(WORKOUT_LOG_KEY, "workoutLog", workoutLog);
+  usePersist(WORKOUT_SESSIONS_KEY, "workoutSessions", workoutSessions);
+  usePersist(EATEN_MEALS_KEY, "eatenMeals", eatenMeals);
+  usePersist(CALENDAR_KEY, "calendar", calendar);
 
   // Log / remove a free-form meal the user actually ate (from the
   // "plan as you go" analyser) for a given day (defaults to today).
@@ -248,10 +307,13 @@ export function AppProvider({ children }) {
     });
 
   // Append a performed set ({ weight, reps }) for an exercise on a given day.
+  // Sets land under the day's existing spelling of the exercise (if any), so a
+  // plan edit that tweaks capitalisation doesn't split the day into two rows.
   const logSet = (exercise, set, day = dateKey()) =>
     setWorkoutLog((w) => {
       const dayLog = { ...(w[day] || {}) };
-      dayLog[exercise] = [...(dayLog[exercise] || []), set];
+      const key = findExerciseKey(dayLog, exercise) || exercise;
+      dayLog[key] = [...(dayLog[key] || []), set];
       return { ...w, [day]: dayLog };
     });
 
@@ -259,9 +321,11 @@ export function AppProvider({ children }) {
   const removeSet = (exercise, index, day = dateKey()) =>
     setWorkoutLog((w) => {
       const dayLog = { ...(w[day] || {}) };
-      const sets = (dayLog[exercise] || []).filter((_, i) => i !== index);
-      if (sets.length) dayLog[exercise] = sets;
-      else delete dayLog[exercise];
+      const key = findExerciseKey(dayLog, exercise);
+      if (!key) return w;
+      const sets = dayLog[key].filter((_, i) => i !== index);
+      if (sets.length) dayLog[key] = sets;
+      else delete dayLog[key];
       return { ...w, [day]: dayLog };
     });
 
@@ -293,12 +357,11 @@ export function AppProvider({ children }) {
 
   // The most recent prior day (before `day`) on which this exercise was logged,
   // returned as { date, sets } — used to show last-session numbers for progress.
+  // Matching is name-normalised (see workoutLog.js) so renamed plans still
+  // find their history.
   const lastSession = (exercise, day = dateKey()) => {
-    const dates = Object.keys(workoutLog)
-      .filter((d) => d < day && workoutLog[d]?.[exercise]?.length)
-      .sort()
-      .reverse();
-    return dates[0] ? { date: dates[0], sets: workoutLog[dates[0]][exercise] } : null;
+    const sessions = exerciseSessions(workoutLog, exercise).filter((s) => s.date < day);
+    return sessions.length ? sessions[sessions.length - 1] : null;
   };
 
   // ---- User-added calendar activities & per-day workout removal ----
