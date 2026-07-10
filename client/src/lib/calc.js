@@ -170,19 +170,51 @@ export function defaultTrainingDays(n) {
 // Monday-first ordering key for a JS weekday (Mon → 0 … Sun → 6).
 const weekOrder = (wd) => (wd + 6) % 7;
 
+// The weekday number (0 = Sun … 6 = Sat) a plan day's label names, or null.
+// AI and coach-edited plans often label days with real weekdays ("Thursday:
+// Rest Day") — those labels carry the user's intended schedule.
+const DAY_ABBREV = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+function namedWeekday(day) {
+  const m = String(day?.day || "")
+    .toLowerCase()
+    .match(/(^|[^a-z])(sun|mon|tue|wed|thu|fri|sat)[a-z]*/);
+  return m ? DAY_ABBREV[m[2]] : null;
+}
+
+// An explicit rest/recovery/off day with nothing to perform. Part of the
+// plan's story, but not a schedulable session — the calendar must show its
+// weekday as rest, not as a zero-minute workout.
+export function isRestDay(day) {
+  if (day?.exercises?.length) return false;
+  return /\b(rest|recovery|off)\b/i.test(`${day?.day || ""} ${day?.focus || ""}`);
+}
+
 // Map a workout plan's days onto weekdays: { [weekday 0-6]: dayObject }.
-// If `trainingDays` (user-chosen weekday numbers) is given, the plan's days are
-// assigned to those weekdays in calendar order; otherwise the default spread for
-// the number of training days is used.
+// When every plan day names a distinct real weekday (e.g. after asking the
+// coach to "move my rest day to Thursday"), those names ARE the schedule and
+// win over everything — re-spreading them across the profile's training days
+// would undo the user's edit. Otherwise sessions are assigned to `trainingDays`
+// (user-chosen weekday numbers) in calendar order, or to the default spread
+// for the session count. Rest days are never scheduled.
 export function workoutSchedule(plan, trainingDays) {
   const days = plan?.days || [];
   if (!days.length) return {};
+  const named = days.map(namedWeekday);
+  if (named.every((wd) => wd !== null) && new Set(named).size === days.length) {
+    const map = {};
+    days.forEach((d, i) => {
+      if (!isRestDay(d)) map[named[i]] = d;
+    });
+    return map;
+  }
+  const sessions = days.filter((d) => !isRestDay(d));
+  if (!sessions.length) return {};
   const weekdays =
     Array.isArray(trainingDays) && trainingDays.length
       ? [...trainingDays].sort((a, b) => weekOrder(a) - weekOrder(b))
-      : WEEKDAY_PATTERNS[Math.min(7, days.length)] || WEEKDAY_PATTERNS[3];
+      : WEEKDAY_PATTERNS[Math.min(7, sessions.length)] || WEEKDAY_PATTERNS[3];
   const map = {};
-  days.forEach((d, i) => {
+  sessions.forEach((d, i) => {
     const wd = weekdays[i % weekdays.length];
     if (wd !== undefined && map[wd] === undefined) map[wd] = d;
   });
@@ -203,6 +235,32 @@ export function effectiveWorkoutForDate(plan, date, trainingDays, calEntry) {
   if (sched) return calEntry?.hideWorkout ? null : sched;
   const idx = calEntry?.addWorkoutIdx;
   return Number.isInteger(idx) ? plan?.days?.[idx] || null : null;
+}
+
+// A plan and the profile can drift apart — e.g. the profile moves to 6
+// days/week after a 4-day plan was generated. The calendar can only place
+// sessions the plan actually has, so the extra picked days stay silently
+// empty (or extra plan days are silently dropped). Detects that drift so the
+// UI can say so instead. Returns null when they agree, else
+// { planDays, pickedDays, unfilled: [weekday 0-6] } — `unfilled` are the
+// picked weekdays (calendar order) left without a session.
+export function planDayMismatch(plan, profile) {
+  // Only real sessions count as training days — an explicit "Rest Day" entry
+  // (e.g. from a coach edit) isn't one the profile needs to account for.
+  const planDays = (plan?.days || []).filter((d) => !isRestDay(d)).length;
+  if (!planDays) return null;
+  const picked =
+    Array.isArray(profile?.trainingDays) && profile.trainingDays.length
+      ? [...profile.trainingDays].sort((a, b) => weekOrder(a) - weekOrder(b))
+      : null;
+  const pickedDays = picked ? picked.length : profile?.daysPerWeek || 0;
+  if (!pickedDays || pickedDays === planDays) return null;
+  const covered = new Set(Object.keys(workoutSchedule(plan, profile?.trainingDays)).map(Number));
+  return {
+    planDays,
+    pickedDays,
+    unfilled: picked ? picked.filter((wd) => !covered.has(wd)) : [],
+  };
 }
 
 // ---- Weekly cardio / flexibility / recovery scheduling ---------------------

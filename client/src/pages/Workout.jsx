@@ -8,6 +8,7 @@ import {
   goalLabel,
   weeklyExtras,
   EXTRA_META,
+  planDayMismatch,
 } from "../lib/calc.js";
 import SuggestEdit from "../components/SuggestEdit.jsx";
 import ExerciseDemo from "../components/ExerciseDemo.jsx";
@@ -302,6 +303,25 @@ export default function Workout() {
       </div>
 
       {error && <div className="banner">⚠ {error}. Make sure the server is running.</div>}
+
+      {/* The plan predates a change to the profile's training days — the
+          calendar can only schedule the days the plan has, so prompt a
+          regenerate here, where the button is. */}
+      {!editing &&
+        (() => {
+          const mm = planDayMismatch(plan, profile);
+          if (!mm) return null;
+          return (
+            <div className="banner">
+              This plan has {mm.planDays} training day{mm.planDays === 1 ? "" : "s"}, but your
+              profile says {mm.pickedDays} — your calendar{" "}
+              {mm.planDays < mm.pickedDays
+                ? "has training days with nothing scheduled"
+                : "won't show the extra sessions"}
+              . Regenerate to match{mm.planDays < mm.pickedDays ? " your new schedule" : ""}.
+            </div>
+          );
+        })()}
 
       {!plan && !loading && (
         <div className="card empty">

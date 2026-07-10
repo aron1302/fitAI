@@ -5,6 +5,8 @@ import {
   engineLabel,
   workoutForDate,
   effectiveWorkoutForDate,
+  planDayMismatch,
+  isRestDay,
   ACTIVITY_TYPES,
   activityType,
   weeklyExtras,
@@ -326,7 +328,7 @@ function LoggedWorkoutCard({ date, dayLog }) {
 // date. The added session then behaves like a scheduled one (loggable, shown on
 // the month grid) and can be removed again.
 function AddWorkoutCard({ plan, onAdd }) {
-  const [idx, setIdx] = useState(0);
+  const [idx, setIdx] = useState(() => plan.days.findIndex((d) => !isRestDay(d)));
   const label = (d) => (d.focus && d.focus !== d.day ? `${d.day} — ${d.focus}` : d.day);
   return (
     <div className="card" style={{ marginBottom: 18 }}>
@@ -344,11 +346,14 @@ function AddWorkoutCard({ plan, onAdd }) {
         }}
       >
         <select value={idx} onChange={(e) => setIdx(e.target.value)}>
-          {plan.days.map((d, i) => (
-            <option key={i} value={i}>
-              {label(d)}
-            </option>
-          ))}
+          {/* Rest-day entries aren't sessions you can place on a day. */}
+          {plan.days.map((d, i) =>
+            isRestDay(d) ? null : (
+              <option key={i} value={i}>
+                {label(d)}
+              </option>
+            )
+          )}
         </select>
         <button className="btn sm" type="submit">
           + Add workout
@@ -519,6 +524,28 @@ export default function Calendar() {
           across the month.
         </div>
       )}
+
+      {/* The plan and the profile's training days can drift apart (e.g. the
+          profile moved to 6 days/week after a 4-day plan was generated) — the
+          calendar can't fill days the plan doesn't have, so say so. */}
+      {(() => {
+        const mm = planDayMismatch(workoutPlan, profile);
+        if (!mm) return null;
+        const names = mm.unfilled.map((wd) => WEEKDAYS[wd]);
+        return (
+          <div className="banner">
+            Your plan covers {mm.planDays} training day{mm.planDays === 1 ? "" : "s"}, but your
+            profile says {mm.pickedDays} —{" "}
+            {mm.planDays < mm.pickedDays
+              ? names.length
+                ? `${names.join(" and ")} ${names.length === 1 ? "has" : "have"} nothing scheduled`
+                : "some of your training days have nothing scheduled"
+              : "the extra plan sessions aren't shown"}
+            . <Link to="/workout">Regenerate your plan</Link> to match, or adjust your days in{" "}
+            <Link to="/profile">your profile</Link>.
+          </div>
+        );
+      })()}
 
       <div className="card" style={{ marginBottom: 18 }}>
         <div className="cal-toolbar">

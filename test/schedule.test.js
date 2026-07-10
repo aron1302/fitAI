@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { workoutSchedule, workoutForDate, defaultTrainingDays } from "../client/src/lib/calc.js";
+import {
+  workoutSchedule,
+  workoutForDate,
+  defaultTrainingDays,
+  planDayMismatch,
+  isRestDay,
+} from "../client/src/lib/calc.js";
 
 const plan3 = { days: [{ day: "Full Body A" }, { day: "Full Body B" }, { day: "Full Body C" }] };
 const plan4 = {
@@ -45,6 +51,104 @@ describe("workoutSchedule", () => {
     expect(s[1].day).toBe("Full Body A"); // Monday first
     expect(s[3].day).toBe("Full Body B"); // Wednesday
     expect(s[0].day).toBe("Full Body C"); // Sunday last
+  });
+});
+
+// A coach-edited plan: days labelled with real weekdays, rest moved to Thursday.
+const ex = (name) => [{ name, sets: 3, reps: "8-12" }];
+const planCoach = {
+  days: [
+    { day: "Monday", focus: "Legs", exercises: ex("Squat") },
+    { day: "Tuesday", focus: "Push", exercises: ex("Bench Press") },
+    { day: "Wednesday", focus: "Pull", exercises: ex("Row") },
+    { day: "Thursday", focus: "Rest Day", exercises: [] },
+    { day: "Friday", focus: "Push", exercises: ex("Overhead Press") },
+    { day: "Saturday", focus: "Legs", exercises: ex("RDL") },
+    { day: "Sunday", focus: "Pull", exercises: ex("Pulldown") },
+  ],
+};
+
+describe("workoutSchedule with weekday-named plans (coach edits)", () => {
+  it("honours the plan's own weekday labels over the picked training days", () => {
+    // The reported bug: rest moved to Thursday, but the calendar kept mapping
+    // positionally onto Mon-Sat — showing the rest entry as a Thursday workout
+    // and nothing on Sunday.
+    const s = workoutSchedule(planCoach, [1, 2, 3, 4, 5, 6]);
+    expect(s[4]).toBeUndefined(); // Thursday — the moved rest day
+    expect(s[0].focus).toBe("Pull"); // Sunday now trains
+    expect(s[1].day).toBe("Monday");
+    expect(s[5].day).toBe("Friday");
+  });
+
+  it("falls back to positional mapping when labels aren't all distinct weekdays", () => {
+    const partial = { days: [{ day: "Monday" }, { day: "Day 2" }, { day: "Day 3" }] };
+    const s = workoutSchedule(partial, [2, 4, 6]);
+    expect(s[2].day).toBe("Monday"); // positional: first session → Tuesday
+    const dupes = { days: [{ day: "Monday" }, { day: "Monday B" }] };
+    expect(workoutSchedule(dupes, [3, 5])[3].day).toBe("Monday");
+  });
+
+  it("skips rest-day entries in positional mode too", () => {
+    const p = {
+      days: [{ day: "Upper" }, { day: "Rest Day" }, { day: "Lower" }, { day: "Push" }],
+    };
+    const s = workoutSchedule(p, [1, 3, 5]);
+    expect(s[1].day).toBe("Upper");
+    expect(s[3].day).toBe("Lower"); // rest entry doesn't consume Wednesday
+    expect(s[5].day).toBe("Push");
+  });
+});
+
+describe("isRestDay", () => {
+  it("matches explicit rest/recovery/off entries without exercises", () => {
+    expect(isRestDay({ day: "Thursday", focus: "Rest Day", exercises: [] })).toBe(true);
+    expect(isRestDay({ day: "Day off" })).toBe(true);
+    expect(isRestDay({ day: "Active Recovery" })).toBe(true);
+  });
+
+  it("is false for real sessions, even recovery-themed ones with exercises", () => {
+    expect(isRestDay({ day: "Push", exercises: [{ name: "Bench" }] })).toBe(false);
+    expect(isRestDay({ day: "Recovery mobility", exercises: [{ name: "Stretch" }] })).toBe(false);
+    expect(isRestDay({ day: "Upper", exercises: [] })).toBe(false); // not rest-named
+  });
+});
+
+describe("planDayMismatch", () => {
+  it("doesn't count a rest-day entry as a training day", () => {
+    // 7 entries but 6 sessions — a 6-day profile matches, no banner.
+    expect(planDayMismatch(planCoach, { trainingDays: [1, 2, 3, 4, 5, 6] })).toBe(null);
+    expect(planDayMismatch(planCoach, { daysPerWeek: 6 })).toBe(null);
+  });
+
+  it("is null when the plan and picked days agree, or without a plan", () => {
+    expect(planDayMismatch(null, { trainingDays: [1, 3, 5] })).toBe(null);
+    expect(planDayMismatch(plan3, { trainingDays: [1, 3, 5] })).toBe(null);
+    expect(planDayMismatch(plan3, {})).toBe(null); // nothing picked, no slider
+  });
+
+  it("names the picked weekdays a shorter plan leaves empty", () => {
+    // The reported bug: 4-day plan, Mon-Sat picked → Fri/Sat silently empty.
+    const mm = planDayMismatch(plan4, { trainingDays: [1, 2, 3, 4, 5, 6] });
+    expect(mm).toEqual({ planDays: 4, pickedDays: 6, unfilled: [5, 6] });
+  });
+
+  it("orders unfilled days Monday-first so Sunday counts as last", () => {
+    const mm = planDayMismatch(plan3, { trainingDays: [0, 1, 3, 5] }); // Sun picked too
+    expect(mm.unfilled).toEqual([0]); // Sunday is the day left empty
+  });
+
+  it("flags a plan with more days than the user picked", () => {
+    const mm = planDayMismatch(plan4, { trainingDays: [1, 4] });
+    expect(mm).toEqual({ planDays: 4, pickedDays: 2, unfilled: [] });
+  });
+
+  it("falls back to the days/week slider when no weekdays are picked", () => {
+    expect(planDayMismatch(plan4, { daysPerWeek: 6 })).toEqual({
+      planDays: 4,
+      pickedDays: 6,
+      unfilled: [],
+    });
+    expect(planDayMismatch(plan4, { daysPerWeek: 4 })).toBe(null);
   });
 });
 
